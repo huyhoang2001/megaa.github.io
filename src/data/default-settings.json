@@ -1,0 +1,21 @@
+{
+  "candidatePoolSize": 14,
+  "minTotal": 55,
+  "allowedDigitalRoots": [8, 5, 3, 1],
+  "allowedParity": ["3/3", "4/2", "2/4"],
+  "allowedInsideOutside": ["4/2", "3/3"],
+  "singleWeights": { "frequency": 45, "gap": 25, "trend": 20, "inside": 10 },
+  "combinationWeights": { "single": 40, "pair": 25, "triple": 15, "structure": 20 },
+  "maxCombinationOverlap": 4,
+  "topCombinationCount": 12,
+  "weightedFrequencyHalfLife": 30,
+  "minPairSupport": 2,
+  "minTransitionSupport": 15,
+  "frequencyZAlertThreshold": 2,
+  "recentZAlertThreshold": 2,
+  "gapPercentileAlertThreshold": 95,
+  "gapZAlertThreshold": 2,
+  "consensusWeights": { "frequency": 25, "momentum": 25, "gap": 25, "association": 25 },
+  "comboWeightsV2": { "consensus": 30, "pair": 20, "triple": 10, "structure": 25, "novelty": 15 },
+  "backtestMinTrainingDraws": 50
+}
