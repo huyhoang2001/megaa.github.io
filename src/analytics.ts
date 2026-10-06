@@ -48,15 +48,26 @@ const ratio = (numerator:number,numeratorWindow:number,denominator:number,denomi
 const pairConfidence = (count:number):Confidence => count >= 6 ? "HIGH" : count >= 3 ? "MEDIUM" : "LOW";
 
 export function filterDraws(draws: Draw[], period: PeriodPreset, fromDate?: string, toDate?: string) {
-  if (period === "all") return draws;
-  if (period === "custom") return draws.filter(d => (!fromDate || d.date >= fromDate) && (!toDate || d.date <= toDate));
-  if (period.startsWith("last") && !period.includes("month") && !period.includes("year")) return draws.slice(-Number(period.replace("last", "")));
-  const latest = new Date(`${draws.at(-1)?.date ?? new Date().toISOString().slice(0, 10)}T00:00:00`);
-  const end = startOfMonth(latest);
-  const start = subMonths(end, period === "last6months" ? 6 : 12);
-  return draws.filter(d => {
+  const ordered=[...draws].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+  if (period === "all") return ordered;
+  if (period === "custom") return ordered.filter(d => (!fromDate || d.date >= fromDate) && (!toDate || d.date <= toDate));
+  if (period.startsWith("last") && !period.includes("month") && !period.includes("year")) return ordered.slice(-Number(period.replace("last", "")));
+  const latest = new Date(`${ordered.at(-1)?.date ?? new Date().toISOString().slice(0, 10)}T00:00:00`);
+  const start = subMonths(latest, period === "last6months" ? 6 : 12);
+  return ordered.filter(d => {
     const date = new Date(`${d.date}T00:00:00`);
-    return date >= start && date < end;
+    return date >= start && date <= latest;
+  });
+}
+
+export function filterCompleteCalendarMonths(draws:Draw[],monthCount?:number){
+  const ordered=[...draws].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+  if(!ordered.length)return ordered;
+  const end=startOfMonth(new Date(`${ordered.at(-1)!.date}T00:00:00`));
+  const start=monthCount===undefined?startOfMonth(new Date(`${ordered[0].date}T00:00:00`)):subMonths(end,monthCount);
+  return ordered.filter(draw=>{
+    const date=new Date(`${draw.date}T00:00:00`);
+    return date>=start&&date<end;
   });
 }
 

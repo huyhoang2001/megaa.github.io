@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backtest, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculateRollingFrequency, calculateSingles, calculateTriples, calculateWeightedFrequency, digitalRoot, filterCombinationsByNumbers, filterDraws, generateCandidates, round2, runRollingBacktest } from "./analytics";
+import { backtest, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculateRollingFrequency, calculateSingles, calculateTriples, calculateWeightedFrequency, digitalRoot, filterCombinationsByNumbers, filterCompleteCalendarMonths, filterDraws, generateCandidates, round2, runRollingBacktest } from "./analytics";
 import { DEFAULT_SETTINGS, INSIDE_SET } from "./domain";
 import type { Draw } from "./domain";
 import history from "./data/mega645-history.json";
@@ -23,11 +23,19 @@ const draws: Draw[] = [
 
 describe("analytics", () => {
   it("filters periods without changing order", () => expect(filterDraws(draws,"last10").map(d=>d.id)).toEqual(draws.slice(-10).map(d=>d.id)));
-  it("uses complete calendar months for month-based periods", () => {
+  it("ends rolling month periods at the latest available draw", () => {
     const real=history.draws as Draw[];
-    const selected=filterDraws(real,"last1year");
-    expect(selected[0].date).toBe("2025-10-01");
-    expect(selected.at(-1)?.date).toBe("2026-09-30");
+    const year=filterDraws(real,"last1year");
+    const sixMonths=filterDraws(real,"last6months");
+    expect(year[0].date).toBe("2025-10-05");
+    expect(year.at(-1)?.date).toBe("2026-10-04");
+    expect(sixMonths[0].date).toBe("2026-04-05");
+    expect(sixMonths.at(-1)?.date).toBe("2026-10-04");
+    expect(filterDraws([real.at(-1)!,real[0]],"all").map(draw=>draw.date)).toEqual([real[0].date,real.at(-1)!.date]);
+    const powerSixMonths=filterDraws(powerHistory.draws as Draw[],"last6months");
+    expect(powerSixMonths).toHaveLength(79);
+    expect(powerSixMonths[0].date).toBe("2026-04-04");
+    expect(powerSixMonths.at(-1)?.date).toBe("2026-10-03");
   });
   it("calculates frequency, gaps, recent counts and ranking", () => {
     const one=calculateSingles(draws,DEFAULT_SETTINGS)[0];
@@ -45,7 +53,7 @@ describe("analytics", () => {
     expect(timeline.at(-1)?.ma20).toBe(round2(timeline.slice(-20).reduce((sum,item)=>sum+item.historicalFrequency,0)/20));
   });
   it("groups draw density by calendar month", () => {
-    const monthly=calculateMonthlyDraws(filterDraws(history.draws as Draw[],"last1year"));
+    const monthly=calculateMonthlyDraws(filterCompleteCalendarMonths(history.draws as Draw[],12));
     expect(monthly).toHaveLength(12);
     expect(monthly[0]).toEqual({month:"2025-10",draws:14});
     expect(monthly.at(-1)).toEqual({month:"2026-09",draws:13});

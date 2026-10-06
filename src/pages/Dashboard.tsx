@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
 import { Info, Maximize2, X } from "lucide-react";
-import { calculateMonthlyDraws, calculateOccurrenceTimeline, digitalRoot, pad, round2 } from "../analytics";
+import { calculateMonthlyDraws, calculateOccurrenceTimeline, digitalRoot, filterCompleteCalendarMonths, pad, round2 } from "../analytics";
 import { INSIDE_SET } from "../domain";
 import { useAnalytics } from "../hooks";
 import { useLotteryStore } from "../store";
@@ -85,7 +85,8 @@ export default function Dashboard() {
     { name: "8-11", value: singles.filter(x=>x.totalCount>=8&&x.totalCount<12).length },
     { name: "<=7", value: singles.filter(x=>x.totalCount<=7).length },
   ];
-  const monthly = calculateMonthlyDraws(filtered);
+  const monthlySource=filters.period==="last6months"?filterCompleteCalendarMonths(draws,6):filters.period==="last1year"?filterCompleteCalendarMonths(draws,12):filters.period==="all"?filterCompleteCalendarMonths(draws):filtered;
+  const monthly = calculateMonthlyDraws(monthlySource);
   const insideTotal=Array.from({length:gameConfig.maxNumber},(_,index)=>index+1).filter(number=>INSIDE_SET.has(number)).length;
   const visibleDrawIds=new Set(filtered.map(draw=>draw.id));
   const timeline = calculateOccurrenceTimeline(draws).filter(point=>visibleDrawIds.has(point.id));
