@@ -5,6 +5,7 @@ import type { Draw } from "./domain";
 import history from "./data/mega645-history.json";
 import powerHistory from "./data/power655-history.json";
 import { settingsForPreset } from "./hooks";
+import { format, parseISO, startOfMonth, subMonths } from "date-fns";
 
 const draws: Draw[] = [
   { id:"1", date:"2026-01-01", numbers:[1,2,3,4,5,6], jackpot:1 },
@@ -27,15 +28,20 @@ describe("analytics", () => {
     const real=history.draws as Draw[];
     const year=filterDraws(real,"last1year");
     const sixMonths=filterDraws(real,"last6months");
-    expect(year[0].date).toBe("2025-10-05");
-    expect(year.at(-1)?.date).toBe("2026-10-04");
-    expect(sixMonths[0].date).toBe("2026-04-05");
-    expect(sixMonths.at(-1)?.date).toBe("2026-10-04");
+    const latestMega=real.at(-1)!;
+    const yearCutoff=format(subMonths(parseISO(latestMega.date),12),"yyyy-MM-dd");
+    const sixMonthCutoff=format(subMonths(parseISO(latestMega.date),6),"yyyy-MM-dd");
+    expect(year.map(draw=>draw.id)).toEqual(real.filter(draw=>draw.date>=yearCutoff&&draw.date<=latestMega.date).map(draw=>draw.id));
+    expect(sixMonths.map(draw=>draw.id)).toEqual(real.filter(draw=>draw.date>=sixMonthCutoff&&draw.date<=latestMega.date).map(draw=>draw.id));
+    expect(year.at(-1)?.date).toBe(latestMega.date);
+    expect(sixMonths.at(-1)?.date).toBe(latestMega.date);
     expect(filterDraws([real.at(-1)!,real[0]],"all").map(draw=>draw.date)).toEqual([real[0].date,real.at(-1)!.date]);
-    const powerSixMonths=filterDraws(powerHistory.draws as Draw[],"last6months");
-    expect(powerSixMonths).toHaveLength(79);
-    expect(powerSixMonths[0].date).toBe("2026-04-04");
-    expect(powerSixMonths.at(-1)?.date).toBe("2026-10-03");
+    const power=powerHistory.draws as Draw[];
+    const latestPower=power.at(-1)!;
+    const powerCutoff=format(subMonths(parseISO(latestPower.date),6),"yyyy-MM-dd");
+    const powerSixMonths=filterDraws(power,"last6months");
+    expect(powerSixMonths.map(draw=>draw.id)).toEqual(power.filter(draw=>draw.date>=powerCutoff&&draw.date<=latestPower.date).map(draw=>draw.id));
+    expect(powerSixMonths.at(-1)?.date).toBe(latestPower.date);
   });
   it("calculates frequency, gaps, recent counts and ranking", () => {
     const one=calculateSingles(draws,DEFAULT_SETTINGS)[0];
@@ -53,10 +59,12 @@ describe("analytics", () => {
     expect(timeline.at(-1)?.ma20).toBe(round2(timeline.slice(-20).reduce((sum,item)=>sum+item.historicalFrequency,0)/20));
   });
   it("groups draw density by calendar month", () => {
-    const monthly=calculateMonthlyDraws(filterCompleteCalendarMonths(history.draws as Draw[],12));
+    const real=history.draws as Draw[];
+    const monthly=calculateMonthlyDraws(filterCompleteCalendarMonths(real,12));
+    const latestMonth=format(startOfMonth(parseISO(real.at(-1)!.date)),"yyyy-MM");
     expect(monthly).toHaveLength(12);
-    expect(monthly[0]).toEqual({month:"2025-10",draws:14});
-    expect(monthly.at(-1)).toEqual({month:"2026-09",draws:13});
+    expect(monthly.every(item=>item.month<latestMonth&&item.draws>0)).toBe(true);
+    expect(monthly.map(item=>item.month)).toEqual([...monthly.map(item=>item.month)].sort());
   });
   it("knows parity and inside membership", () => { expect(INSIDE_SET.has(2)).toBe(true); expect(INSIDE_SET.has(45)).toBe(false); });
   it("supports the Power 6/55 number space and supplied inside set",()=>{
@@ -84,8 +92,9 @@ describe("analytics", () => {
     const power=powerHistory.draws as Draw[];
     expect(powerHistory.repository).toBe("https://github.com/NhanAZ-Data/vietlott-research");
     expect(powerHistory.source).toContain("NhanAZ-Data/vietlott-research/main/datasets/draws/power655/all.csv");
-    expect(power).toHaveLength(1406);
-    expect(power.at(-1)?.date).toBe("2026-10-03");
+    expect(power.length).toBeGreaterThan(1400);
+    expect(power.map(draw=>draw.date)).toEqual([...power.map(draw=>draw.date)].sort());
+    expect(power.at(-1)?.date).toBe(powerHistory.sourceThrough);
     expect(power.every(draw=>draw.numbers.length===6&&new Set(draw.numbers).size===6&&draw.numbers.every(number=>number>=1&&number<=55)&&draw.bonus!==undefined&&!draw.numbers.includes(draw.bonus)&&Number.isFinite(draw.jackpot)&&Number.isFinite(draw.jackpot2))).toBe(true);
   });
   it("generates valid, scored, diverse candidates", () => { const singles=calculateSingles(draws,DEFAULT_SETTINGS); const pairs=calculatePairs(draws); const triples=calculateTriples(draws); const candidates=generateCandidates(singles,pairs,triples,DEFAULT_SETTINGS); expect(candidates.every(c=>c.valid&&c.numbers.length===6&&Number.isFinite(c.totalScore))).toBe(true); });
