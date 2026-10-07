@@ -291,7 +291,7 @@ export type BacktestResultRow={targetId:string;date:string;predictions:BacktestP
 
 export function getBacktestTrainingWindows(draws:Draw[],fromDate:string,toDate:string){
   const priorDraws=Math.max(0,draws.filter(draw=>draw.date>=fromDate&&draw.date<=toDate).length-1);
-  return {priorDraws,windows:priorDraws>=100?[50,100]:priorDraws>=50?[50]:priorDraws>=30?[30]:[]};
+  return {priorDraws,windows:priorDraws>=100?[30,50,100]:priorDraws>=50?[30,50]:priorDraws>=30?[30]:[]};
 }
 
 export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:BacktestRangeOptions){

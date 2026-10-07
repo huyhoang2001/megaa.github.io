@@ -130,8 +130,8 @@ describe("analytics", () => {
     const repeated=(count:number)=>Array.from({length:count},(_,index)=>({...draws[0],id:String(index),date:"2026-01-01"}));
     expect(getBacktestTrainingWindows(repeated(30),"2026-01-01","2026-01-01")).toEqual({priorDraws:29,windows:[]});
     expect(getBacktestTrainingWindows(repeated(31),"2026-01-01","2026-01-01").windows).toEqual([30]);
-    expect(getBacktestTrainingWindows(repeated(51),"2026-01-01","2026-01-01").windows).toEqual([50]);
-    expect(getBacktestTrainingWindows(repeated(101),"2026-01-01","2026-01-01").windows).toEqual([50,100]);
+    expect(getBacktestTrainingWindows(repeated(51),"2026-01-01","2026-01-01").windows).toEqual([30,50]);
+    expect(getBacktestTrainingWindows(repeated(101),"2026-01-01","2026-01-01").windows).toEqual([30,50,100]);
   });
   it("calculates advanced frequency and gap statistics from history",()=>{
     expect(calculateRollingFrequency(draws,1)).toEqual({last10:5,last20:7,last30:7,last50:7,last100:7,all:7});
