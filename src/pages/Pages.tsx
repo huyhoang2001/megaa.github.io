@@ -1,18 +1,20 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format, parseISO } from "date-fns";
 import { useForm } from "react-hook-form";
 import { Download, Pencil, Plus, RotateCcw, Search, Trash2, Upload } from "lucide-react";
 import { z } from "zod";
+import type { ColumnDef } from "@tanstack/react-table";
 import { filterCombinationsByNumbers, pad } from "../analytics";
 import { LOTTERY_GAMES } from "../domain";
-import type { Draw } from "../domain";
+import type { CandidateCombination, Draw, PairStats, SingleNumberStats, TripleStats } from "../domain";
 import { useAnalytics } from "../hooks";
 import { useLotteryStore } from "../store";
-import { Button, Card, CardHeader, EmptyState, NumberBall, ScoreBadge, Select } from "../ui";
+import { Button, Card, CardHeader, NumberBall, ScoreBadge, Select } from "../ui";
 import { useI18n } from "../i18n";
 import type { TranslationKey } from "../i18n";
 import GameSwitch from "../GameSwitch";
+import DataTable from "../DataTable";
 
 type BacktestPayload={result:ReturnType<typeof import("../analytics").backtest>;rolling:ReturnType<typeof import("../analytics").runRollingBacktest>};
 const backtestCache=new Map<string,BacktestPayload>();
@@ -27,6 +29,13 @@ const drawSchema = z.object({
 type DrawForm = z.infer<typeof drawSchema>;
 
 function PageTitle({ title, subtitle, actions }: { title: string; subtitle: string; actions?: React.ReactNode }) { return <div className="page-title"><div><h1>{title}</h1><p>{subtitle}</p></div>{actions && <div className="page-actions">{actions}</div>}</div>; }
+
+function useTableLabels(){
+  const {t}=useI18n();
+  return {
+    filterColumn:t("table.filterColumn"),sortAscending:t("table.sortAscending"),sortDescending:t("table.sortDescending"),filterValues:t("table.filterValues"),filterPlaceholder:t("table.filterPlaceholder"),filterHint:t("table.filterHint"),clearColumn:t("table.clearColumn"),resetFilters:t("table.resetFilters"),rowsShown:t("table.rowsShown"),close:t("table.close"),noMatches:t("table.noMatches"),
+  };
+}
 
 export function HistoryPage() {
   const {t}=useI18n();
@@ -58,24 +67,49 @@ export function HistoryPage() {
 
 export function SinglesPage() {
   const {t}=useI18n();
-  const { singles, filtered }=useAnalytics(); const [query,setQuery]=useState("");
-  const rows=[...singles].filter(x=>!query||String(x.number).includes(query)||x.state.toLowerCase().includes(query.toLowerCase())).sort((a,b)=>a.rank-b.rank);
-  return <><PageTitle title={t("pages.singlesTitle")} subtitle={t("pages.singlesSubtitle",{count:filtered.length})} actions={<GameSwitch/>}/><div className="filter-row"><input value={query} onChange={e=>setQuery(e.target.value)} placeholder={t("pages.filterNumberState")}/></div><Card className="table-card"><div className="table-scroll"><table><thead><tr><th>{t("common.rank")}</th><th>{t("common.number")}</th><th>{t("common.count")}</th><th>{t("pages.rate")}</th><th>{t("pages.io")}</th><th>{t("pages.eo")}</th><th>{t("pages.gap")}</th><th>{t("pages.avgGap")}</th><th>{t("pages.maxGap")}</th><th>{t("pages.last10")}</th><th>{t("common.last30")}</th><th>{t("pages.trend")}</th><th>{t("pages.state")}</th><th>{t("common.score")}</th></tr></thead><tbody>{rows.map(x=><tr key={x.number}><td>#{x.rank}</td><td><NumberBall number={x.number} small/></td><td>{x.totalCount}</td><td>{(x.frequencyRate*100).toFixed(2)}%</td><td>{x.inside?t("common.inside"):t("common.outside")}</td><td>{x.parity==="EVEN"?t("common.even"):t("common.odd")}</td><td>{x.currentGap}</td><td>{x.averageGap.toFixed(1)}</td><td>{x.maxGap}</td><td>{x.countLast10}</td><td>{x.countLast30}</td><td>{x.trend30.toFixed(2)}</td><td><span className={`state state-${x.state.toLowerCase()}`}>{t(`state.${x.state}` as TranslationKey)}</span></td><td><ScoreBadge score={x.technicalScore}/></td></tr>)}</tbody></table></div></Card></>;
+  const labels=useTableLabels();
+  const { singles, filtered }=useAnalytics();
+  const columns=useMemo<ColumnDef<SingleNumberStats>[]>(()=>[
+    {accessorKey:"rank",header:t("common.rank"),cell:info=>`#${info.getValue<number>()}`},
+    {accessorKey:"number",header:t("common.number"),cell:info=><NumberBall number={info.getValue<number>()} small/>},
+    {accessorKey:"totalCount",header:t("common.count")},
+    {id:"rate",accessorFn:row=>row.frequencyRate*100,header:t("pages.rate"),cell:info=>`${info.getValue<number>().toFixed(2)}%`},
+    {id:"inside",accessorFn:row=>row.inside?t("common.inside"):t("common.outside"),header:t("pages.io")},
+    {id:"parity",accessorFn:row=>row.parity==="EVEN"?t("common.even"):t("common.odd"),header:t("pages.eo")},
+    {accessorKey:"currentGap",header:t("pages.gap")},{accessorKey:"averageGap",header:t("pages.avgGap"),cell:info=>info.getValue<number>().toFixed(1)},{accessorKey:"maxGap",header:t("pages.maxGap")},{accessorKey:"countLast10",header:t("pages.last10")},{accessorKey:"countLast30",header:t("common.last30")},{accessorKey:"trend30",header:t("pages.trend"),cell:info=>info.getValue<number>().toFixed(2)},
+    {accessorKey:"state",header:t("pages.state"),cell:info=>{const state=info.getValue<SingleNumberStats["state"]>();return <span className={`state state-${state.toLowerCase()}`}>{t(`state.${state}` as TranslationKey)}</span>;}},
+    {accessorKey:"technicalScore",header:t("common.score"),cell:info=><ScoreBadge score={info.getValue<number>()}/>},
+  ],[t]);
+  return <><PageTitle title={t("pages.singlesTitle")} subtitle={t("pages.singlesSubtitle",{count:filtered.length})} actions={<GameSwitch/>}/><DataTable data={singles} columns={columns} labels={labels}/></>;
 }
 
-export function PairsPage(){ const {t}=useI18n(); const {pairs,filtered}=useAnalytics(); const [q,setQ]=useState(""); const rows=pairs.filter(x=>x.key.includes(q)).slice(0,250); return <><PageTitle title={t("pages.pairsTitle")} subtitle={t("pages.pairsSubtitle",{count:filtered.length})} actions={<GameSwitch/>}/><div className="filter-row"><input value={q} onChange={e=>setQ(e.target.value)} placeholder={t("pages.searchPair")}/></div><RankTable headers={[t("common.rank"),t("common.pair"),t("common.count"),t("pages.rate"),t("common.insideOutside"),t("common.evenOdd")]} rows={rows.map(x=>[x.rank,x.key,x.count,`${(x.rate*100).toFixed(2)}%`,`${x.insideCount}/${x.outsideCount}`,`${x.evenCount}/${x.oddCount}`])}/></> }
-export function TriplesPage(){ const {t}=useI18n(); const {triples,filtered}=useAnalytics(); const [q,setQ]=useState(""); const rows=triples.filter(x=>x.key.includes(q)).slice(0,250); return <><PageTitle title={t("pages.triplesTitle")} subtitle={t("pages.triplesSubtitle",{triples:triples.length,count:filtered.length})} actions={<GameSwitch/>}/><div className="filter-row"><input value={q} onChange={e=>setQ(e.target.value)} placeholder={t("pages.searchTriple")}/></div><RankTable headers={[t("common.rank"),t("common.triple"),t("common.count"),t("pages.rate"),t("common.insideOutside"),t("common.evenOdd")]} rows={rows.map(x=>[x.rank,x.key,x.count,`${(x.rate*100).toFixed(2)}%`,`${x.insideCount}/${x.outsideCount}`,`${x.evenCount}/${x.oddCount}`])}/></> }
+export function PairsPage(){
+  const {t}=useI18n(); const labels=useTableLabels(); const {pairs,filtered}=useAnalytics();
+  const columns=useMemo<ColumnDef<PairStats>[]>(()=>[
+    {accessorKey:"rank",header:t("common.rank")},{accessorKey:"key",header:t("common.pair")},{accessorKey:"count",header:t("common.count")},{id:"rate",accessorFn:row=>row.rate*100,header:t("pages.rate"),cell:info=>`${info.getValue<number>().toFixed(2)}%`},{id:"insideOutside",accessorFn:row=>`${row.insideCount}/${row.outsideCount}`,header:t("common.insideOutside")},{id:"evenOdd",accessorFn:row=>`${row.evenCount}/${row.oddCount}`,header:t("common.evenOdd")},
+  ],[t]);
+  return <><PageTitle title={t("pages.pairsTitle")} subtitle={t("pages.pairsSubtitle",{count:filtered.length})} actions={<GameSwitch/>}/><DataTable data={pairs} columns={columns} labels={labels} maxRows={250}/></>;
+}
+export function TriplesPage(){
+  const {t}=useI18n(); const labels=useTableLabels(); const {triples,filtered}=useAnalytics();
+  const columns=useMemo<ColumnDef<TripleStats>[]>(()=>[
+    {accessorKey:"rank",header:t("common.rank")},{accessorKey:"key",header:t("common.triple")},{accessorKey:"count",header:t("common.count")},{id:"rate",accessorFn:row=>row.rate*100,header:t("pages.rate"),cell:info=>`${info.getValue<number>().toFixed(2)}%`},{id:"insideOutside",accessorFn:row=>`${row.insideCount}/${row.outsideCount}`,header:t("common.insideOutside")},{id:"evenOdd",accessorFn:row=>`${row.evenCount}/${row.oddCount}`,header:t("common.evenOdd")},
+  ],[t]);
+  return <><PageTitle title={t("pages.triplesTitle")} subtitle={t("pages.triplesSubtitle",{triples:triples.length,count:filtered.length})} actions={<GameSwitch/>}/><DataTable data={triples} columns={columns} labels={labels} maxRows={250}/></>;
+}
 export function CombinationsPage(){
   const {t}=useI18n();
+  const labels=useTableLabels();
   const {dashboardFilters,updateDashboardFilters}=useLotteryStore();
   const {predictions}=useAnalytics();
   const [query,setQuery]=useState("");
   const visiblePredictions=filterCombinationsByNumbers(predictions,query);
+  const columns=useMemo<ColumnDef<CandidateCombination>[]>(()=>[
+    {accessorKey:"rank",header:t("common.rank")},{id:"combination",accessorFn:row=>row.numbers.map(pad).join(" - "),header:t("common.combination")},{accessorKey:"total",header:t("pages.sum")},{accessorKey:"digitalRoot",header:t("pages.root")},{id:"evenOdd",accessorFn:row=>`${row.evenCount}/${row.oddCount}`,header:t("common.evenOdd")},{id:"insideOutside",accessorFn:row=>`${row.insideCount}/${row.outsideCount}`,header:t("common.insideOutside")},{accessorKey:"singleScore",header:t("pages.single"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"pairScore",header:t("common.pair"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"tripleScore",header:t("common.triple"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"structureScore",header:t("prediction.structure"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"totalScore",header:t("pages.totalScore"),cell:info=>info.getValue<number>().toFixed(2)},
+  ],[t]);
   const presets:[string,TranslationKey][]=[["Default","preset.default"],["Balanced","preset.balanced"],["Hot","preset.hot"],["Gap","preset.gap"],["Pair","preset.pair"],["Triple","preset.triple"],["Custom","preset.custom"]];
   const presetControl=<label className="page-preset-control"><span>{t("dashboard.scoringPreset")}</span><Select aria-label={t("dashboard.scoringPreset")} value={dashboardFilters.scoringPreset} onChange={e=>updateDashboardFilters({scoringPreset:e.target.value})}>{presets.map(([value,key])=><option value={value} key={value}>{t(key)}</option>)}</Select></label>;
-  return <><PageTitle title={t("pages.combinationsTitle")} subtitle={t("pages.combinationsSubtitle")} actions={<><GameSwitch/>{presetControl}</>}/><Card className="notice">{t("pages.combinationsNotice")}</Card><div className="combination-search"><label><span>{t("pages.searchCombinationLabel")}</span><div className="combination-search-field"><Search size={15} aria-hidden="true"/><input type="search" inputMode="numeric" value={query} onChange={event=>setQuery(event.target.value)} placeholder={t("pages.searchCombination")} aria-describedby="combination-search-count"/></div></label><span id="combination-search-count" aria-live="polite">{t("pages.combinationMatches",{count:visiblePredictions.length,total:predictions.length})}</span></div><RankTable headers={[t("common.rank"),t("common.combination"),t("pages.sum"),t("pages.root"),t("common.evenOdd"),t("common.insideOutside"),t("pages.single"),t("common.pair"),t("common.triple"),t("prediction.structure"),t("pages.totalScore")]} rows={visiblePredictions.map(x=>[x.rank,x.numbers.map(pad).join(" - "),x.total,x.digitalRoot,`${x.evenCount}/${x.oddCount}`,`${x.insideCount}/${x.outsideCount}`,x.singleScore.toFixed(2),x.pairScore.toFixed(2),x.tripleScore.toFixed(2),x.structureScore.toFixed(2),x.totalScore.toFixed(2)])}/></>;
+  return <><PageTitle title={t("pages.combinationsTitle")} subtitle={t("pages.combinationsSubtitle")} actions={<><GameSwitch/>{presetControl}</>}/><Card className="notice">{t("pages.combinationsNotice")}</Card><div className="combination-search"><label><span>{t("pages.searchCombinationLabel")}</span><div className="combination-search-field"><Search size={15} aria-hidden="true"/><input type="search" inputMode="numeric" value={query} onChange={event=>setQuery(event.target.value)} placeholder={t("pages.searchCombination")} aria-describedby="combination-search-count"/></div></label><span id="combination-search-count" aria-live="polite">{t("pages.combinationMatches",{count:visiblePredictions.length,total:predictions.length})}</span></div><DataTable data={visiblePredictions} columns={columns} labels={labels} onReset={()=>setQuery("")}/></>;
 }
 export function BacktestPage(){ const {t}=useI18n(); const {draws:megaDraws,powerDraws,selectedGame,settings}=useLotteryStore(); const draws=selectedGame==="power655"?powerDraws:megaDraws; const maxNumber=LOTTERY_GAMES[selectedGame].maxNumber; const cacheKey=JSON.stringify([selectedGame,draws.map(draw=>[draw.id,draw.date,draw.numbers]),settings]); const [data,setData]=useState<BacktestPayload|null>(()=>backtestCache.get(cacheKey)??null); const [failed,setFailed]=useState(false); useEffect(()=>{const cached=backtestCache.get(cacheKey);if(cached){setData(cached);setFailed(false);return;}setData(null);setFailed(false);const worker=new Worker(new URL("../backtest.worker.ts",import.meta.url),{type:"module"});worker.onmessage=({data:payload}:MessageEvent<BacktestPayload>)=>{backtestCache.set(cacheKey,payload);setData(payload);worker.terminate();};worker.onerror=()=>{setFailed(true);worker.terminate();};worker.postMessage({draws,settings,maxNumber});return()=>worker.terminate();},[cacheKey,draws,settings,maxNumber]); return <><PageTitle title={t("pages.backtestTitle")} subtitle={t("pages.backtestSubtitle")} actions={<GameSwitch/>}/>{!data?<Card className="backtest-loading" role="status">{failed?t("pages.backtestError"):t("pages.backtestLoading")}</Card>:<><div className="kpi-grid"><Card><span>{t("pages.tests")}</span><b>{data.result.tests}</b></Card><Card><span>{t("pages.averageMatches")}</span><b>{data.result.average.toFixed(2)}/6</b></Card><Card><span>{t("pages.bestMatch")}</span><b>{data.result.best}/6</b></Card><Card><span>{t("pages.modelHitRate")}</span><b>{(data.rolling.modelTop10HitRate*100).toFixed(1)}%</b></Card><Card><span>{t("pages.randomHitRate")}</span><b>{(data.rolling.randomTop10HitRate*100).toFixed(1)}%</b></Card><Card><span>{t("pages.meanRank")}</span><b>{data.rolling.meanActualRank.toFixed(1)}</b></Card></div><Card><CardHeader title={t("pages.hitDistribution")} subtitle={t("pages.hitDistributionSubtitle")}/><div className="hit-grid">{data.result.distribution.map((v,i)=><div key={i}><b>{v}</b><span>{t("pages.matches",{count:i})}</span></div>)}</div></Card><p className="disclaimer">{t("pages.backtestDisclaimer")}</p></>}</> }
 export function SettingsPage(){ const {settings,updateSettings,resetData}=useLotteryStore(); return <><PageTitle title="Settings" subtitle="Changes update predictions and analytics immediately"/><div className="settings-grid"><Card><CardHeader title="Candidate generation"/><label>Candidate pool size<input type="number" min="10" max="18" value={settings.candidatePoolSize} onChange={e=>updateSettings({candidatePoolSize:Number(e.target.value)})}/></label><label>Minimum total<input type="number" value={settings.minTotal} onChange={e=>updateSettings({minTotal:Number(e.target.value)})}/></label><label>Maximum overlap<input type="number" min="0" max="5" value={settings.maxCombinationOverlap} onChange={e=>updateSettings({maxCombinationOverlap:Number(e.target.value)})}/></label></Card><Card><CardHeader title="Model support"/><label>Weighted-frequency half-life<input type="number" min="1" value={settings.weightedFrequencyHalfLife} onChange={e=>updateSettings({weightedFrequencyHalfLife:Number(e.target.value)})}/></label><label>Minimum pair support<input type="number" min="1" value={settings.minPairSupport} onChange={e=>updateSettings({minPairSupport:Number(e.target.value)})}/></label><label>Minimum transition support<input type="number" min="1" value={settings.minTransitionSupport} onChange={e=>updateSettings({minTransitionSupport:Number(e.target.value)})}/></label><label>Backtest training draws<input type="number" min="10" value={settings.backtestMinTrainingDraws} onChange={e=>updateSettings({backtestMinTrainingDraws:Number(e.target.value)})}/></label></Card><Card><CardHeader title="Consensus weights"/>{Object.entries(settings.consensusWeights).map(([key,value])=><label key={key}>{key}<input type="number" min="0" value={value} onChange={e=>updateSettings({consensusWeights:{...settings.consensusWeights,[key]:Number(e.target.value)}})}/></label>)}</Card><Card><CardHeader title="Combination V2 weights"/>{Object.entries(settings.comboWeightsV2).map(([key,value])=><label key={key}>{key}<input type="number" min="0" value={value} onChange={e=>updateSettings({comboWeightsV2:{...settings.comboWeightsV2,[key]:Number(e.target.value)}})}/></label>)}</Card></div><Button className="secondary settings-reset" onClick={resetData}><RotateCcw size={15}/>Restore defaults</Button></> }
-
-function RankTable({headers,rows}:{headers:string[];rows:(string|number|undefined)[][]}){ return <Card className="table-card"><div className="table-scroll"><table><thead><tr>{headers.map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{rows.length?rows.map((row,i)=><tr key={i}>{row.map((cell,j)=><td key={j}>{cell ?? "-"}</td>)}</tr>):<tr><td colSpan={headers.length}><EmptyState/></td></tr>}</tbody></table></div></Card> }

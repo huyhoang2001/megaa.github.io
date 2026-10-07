@@ -15,6 +15,7 @@
   "dependencies": {
     "@hookform/resolvers": "latest",
     "@tailwindcss/vite": "latest",
+    "@tanstack/react-table": "^8.21.3",
     "@vitejs/plugin-react": "latest",
     "clsx": "latest",
     "date-fns": "latest",
