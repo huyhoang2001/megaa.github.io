@@ -12,6 +12,24 @@ export function filterCombinationsByNumbers<T extends {numbers:number[]}>(items:
   if(!numbers.length||numbers.length>6)return [];
   return items.filter(item=>numbers.every(number=>item.numbers.includes(number)));
 }
+export type CompactCombinationIssue={entryIndex:number;chunkIndex?:number;value:string};
+export function parseCompactCombinations(input:string,maxNumber:number){
+  const entries=input.split(/[,\n]+/).map(value=>value.trim()).filter(Boolean);
+  const issues:CompactCombinationIssue[]=[];
+  const chunks=entries.map((entry,entryIndex)=>{
+    if(!/^\d{6}$/.test(entry)){issues.push({entryIndex,value:entry});return [] as number[];}
+    return (entry.match(/\d{2}/g)??[]).map((value,chunkIndex)=>{const number=Number(value);if(number<1||number>maxNumber)issues.push({entryIndex,chunkIndex,value});return number;});
+  });
+  if(entries.length%2===1&&entries.length)issues.push({entryIndex:entries.length-1,value:entries.at(-1)!});
+  const combinations:number[][]=[];
+  for(let index=0;index+1<entries.length;index+=2){
+    if(issues.some(issue=>issue.entryIndex===index||issue.entryIndex===index+1))continue;
+    const numbers=[...chunks[index],...chunks[index+1]];
+    numbers.forEach((number,numberIndex)=>{if(numbers.indexOf(number)!==numberIndex)issues.push({entryIndex:index+Math.floor(numberIndex/3),chunkIndex:numberIndex%3,value:pad(number)});});
+    if(!issues.some(issue=>issue.entryIndex===index||issue.entryIndex===index+1))combinations.push(numbers.sort((a,b)=>a-b));
+  }
+  return {entries,issues,combinations,valid:entries.length>=2&&issues.length===0};
+}
 export const digitalRoot = (n: number) => n <= 0 ? 0 : 1 + ((n - 1) % 9);
 export const combinations = <T,>(items: T[], size: number): T[][] => {
   const result: T[][] = [];
@@ -207,16 +225,7 @@ export function calculateTriples(draws: Draw[],maxNumber=45): TripleStats[] {
   return [...map.entries()].map(([key, item]) => {const expected=item.numbers.reduce((product,n)=>product*((counts.get(n)??0)/Math.max(1,draws.length)),1);return { ...item, key, rate: draws.length ? item.count / draws.length : 0,lift:expected?(item.count/draws.length)/expected:0,confidence:pairConfidence(item.count), insideCount: item.numbers.filter(n => INSIDE_SET.has(n)).length, outsideCount: item.numbers.filter(n => !INSIDE_SET.has(n)).length, evenCount: item.numbers.filter(n => n % 2 === 0).length, oddCount: item.numbers.filter(n => n % 2 !== 0).length, rank: 0 };}).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)).map((x, i) => ({ ...x, rank: i + 1 }));
 }
 
-export function generateCandidates(singles: SingleNumberStats[], pairs: PairStats[], triples: TripleStats[], settings: AnalysisSettings, history:Draw[]=[]): CandidateCombination[] {
-  const ranked = [...singles].sort((a, b) => b.technicalScore - a.technicalScore || a.number - b.number);
-  // The inside preference can otherwise fill the entire pool with inside numbers,
-  // making the required 4/2 or 3/3 structure mathematically impossible.
-  const insideAvailable=ranked.filter(item=>item.inside).length;
-  const insideTarget = Math.round(settings.candidatePoolSize * insideAvailable / Math.max(1,ranked.length));
-  const pool = [
-    ...ranked.filter(x => x.inside).slice(0, insideTarget),
-    ...ranked.filter(x => !x.inside).slice(0, settings.candidatePoolSize - insideTarget),
-  ].map(x => x.number).sort((a, b) => a - b);
+export function scoreCandidateCombinations(numberSets:number[][],singles:SingleNumberStats[],pairs:PairStats[],triples:TripleStats[],settings:AnalysisSettings,history:Draw[]=[]):CandidateCombination[]{
   const singleMap = new Map(singles.map(x => [x.number, x.models.consensus.normalizedScore]));
   const pairMap = new Map(pairs.map(x => [x.key, x]));
   const tripleMap = new Map(triples.map(x => [x.key, x]));
@@ -224,7 +233,7 @@ export function generateCandidates(singles: SingleNumberStats[], pairs: PairStat
   const maxTripleLift = Math.max(1, ...triples.map(x => x.lift));
   const w = settings.comboWeightsV2??{consensus:30,pair:20,triple:10,structure:25,novelty:15};
   const historySets=history.map(draw=>new Set(draw.numbers));
-  const candidates = combinations(pool, 6).map(numbers => {
+  return numberSets.map(numbers => {
     const total = numbers.reduce((a, b) => a + b, 0);
     const root = digitalRoot(total);
     const evenCount = numbers.filter(n => n % 2 === 0).length;
@@ -242,7 +251,20 @@ export function generateCandidates(singles: SingleNumberStats[], pairs: PairStat
     const totalScore = (singleScore*w.consensus+pairScore*w.pair+tripleScore*w.triple+structureScore*w.structure+noveltyScore*w.novelty)/100;
     const confidence:Confidence=numbers.filter(n=>(singles[n-1]?.confidence??"LOW")!=="LOW").length>=4?"MEDIUM":"LOW";
     return { numbers, total, digitalRoot: root, evenCount, oddCount: 6-evenCount, insideCount, outsideCount: 6-insideCount, singleScore, pairScore, tripleScore, structureScore, noveltyScore,maxHistoricalOverlap,totalScore,confidence,valid };
-  }).filter(x => x.valid).sort((a, b) => b.totalScore - a.totalScore);
+  });
+}
+
+export function generateCandidates(singles: SingleNumberStats[], pairs: PairStats[], triples: TripleStats[], settings: AnalysisSettings, history:Draw[]=[]): CandidateCombination[] {
+  const ranked = [...singles].sort((a, b) => b.technicalScore - a.technicalScore || a.number - b.number);
+  // The inside preference can otherwise fill the entire pool with inside numbers,
+  // making the required 4/2 or 3/3 structure mathematically impossible.
+  const insideAvailable=ranked.filter(item=>item.inside).length;
+  const insideTarget = Math.round(settings.candidatePoolSize * insideAvailable / Math.max(1,ranked.length));
+  const pool = [
+    ...ranked.filter(x => x.inside).slice(0, insideTarget),
+    ...ranked.filter(x => !x.inside).slice(0, settings.candidatePoolSize - insideTarget),
+  ].map(x => x.number).sort((a, b) => a - b);
+  const candidates=scoreCandidateCombinations(combinations(pool,6),singles,pairs,triples,settings,history).filter(x=>x.valid).sort((a,b)=>b.totalScore-a.totalScore);
   const selected: CandidateCombination[] = [];
   for (const candidate of candidates) {
     if (selected.every(existing => candidate.numbers.filter(n => existing.numbers.includes(n)).length <= settings.maxCombinationOverlap)) selected.push(candidate);
@@ -263,8 +285,8 @@ export function backtest(draws: Draw[], settings: AnalysisSettings, count = 12,m
   return { distribution, average: tests ? totalMatches / tests : 0, best, tests };
 }
 
-export type BacktestRangeOptions={fromDate:string;toDate:string;trainingDraws:number;predictionCount:number;maxNumber?:number};
-export type BacktestPrediction=CandidateCombination&{triple:string;count:number;rate:number;matches:number};
+export type BacktestRangeOptions={fromDate:string;toDate:string;trainingDraws:number;predictionCount:number;maxNumber?:number;manualCombinations?:number[][]};
+export type BacktestPrediction=CandidateCombination&{count:number;rate:number;matches:number};
 export type BacktestResultRow={targetId:string;date:string;predictions:BacktestPrediction[];actual:number[];bestMatches:number};
 
 export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:BacktestRangeOptions){
@@ -278,11 +300,14 @@ export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:Bac
     const target=draws[index];
     if(target.date<options.fromDate||target.date>options.toDate||index<trainingDraws)continue;
     const history=draws.slice(index-trainingDraws,index);
+    const singles=calculateSingles(history,settings,maxNumber);
+    const pairs=calculatePairs(history,maxNumber);
     const triples=calculateTriples(history,maxNumber);
-    const tripleMap=new Map(triples.map(triple=>[triple.key,triple]));
-    const predictions:BacktestPrediction[]=generateCandidates(calculateSingles(history,settings,maxNumber),calculatePairs(history,maxNumber),triples,settings,history).slice(0,predictionCount).map(candidate=>{
-      const strongest=combinations(candidate.numbers,3).map(numbers=>{const key=numbers.map(pad).join("-");const stat=tripleMap.get(key);return {key,count:stat?.count??0,rate:stat?.rate??0};}).sort((a,b)=>b.count-a.count||a.key.localeCompare(b.key))[0];
-      return {...candidate,triple:strongest.key,count:strongest.count,rate:strongest.rate,matches:candidate.numbers.filter(number=>target.numbers.includes(number)).length};
+    const candidates=options.manualCombinations?.length?scoreCandidateCombinations(options.manualCombinations,singles,pairs,triples,settings,history):generateCandidates(singles,pairs,triples,settings,history).slice(0,predictionCount);
+    const predictions:BacktestPrediction[]=candidates.map(candidate=>{
+      const key=candidate.numbers.map(pad).join("-");
+      const count=history.filter(draw=>draw.numbers.map(pad).join("-")===key).length;
+      return {...candidate,count,rate:count/history.length,matches:candidate.numbers.filter(number=>target.numbers.includes(number)).length};
     });
     const bestMatches=predictions.reduce((current,prediction)=>Math.max(current,prediction.matches),0);
     distribution[bestMatches]++;

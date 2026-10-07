@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculateRollingFrequency, calculateSingles, calculateTriples, calculateWeightedFrequency, digitalRoot, filterCombinationsByNumbers, filterCompleteCalendarMonths, filterDraws, generateCandidates, round2, runRollingBacktest } from "./analytics";
+import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculateRollingFrequency, calculateSingles, calculateTriples, calculateWeightedFrequency, digitalRoot, filterCombinationsByNumbers, filterCompleteCalendarMonths, filterDraws, generateCandidates, parseCompactCombinations, round2, runRollingBacktest } from "./analytics";
 import { DEFAULT_SETTINGS, INSIDE_SET } from "./domain";
 import type { Draw } from "./domain";
 import history from "./data/mega645-history.json";
@@ -88,6 +88,15 @@ describe("analytics", () => {
     expect(filterCombinationsByNumbers(items,"")).toBe(items);
     expect(filterCombinationsByNumbers(items,"none")).toEqual([]);
   });
+  it("parses compact manual combinations and identifies invalid segments",()=>{
+    const mega=parseCompactCombinations("093653, 102301",45);
+    expect(mega.valid).toBe(false);
+    expect(mega.issues.some(issue=>issue.value==="53")).toBe(true);
+    const power=parseCompactCombinations("093653, 102301",55);
+    expect(power.valid).toBe(true);
+    expect(power.combinations).toEqual([[1,9,10,23,36,53]]);
+    expect(parseCompactCombinations("09365, 102301",55).issues[0].value).toBe("09365");
+  });
   it("loads valid Power 6/55 history with a distinct bonus number",()=>{
     const power=powerHistory.draws as Draw[];
     expect(powerHistory.repository).toBe("https://github.com/NhanAZ-Data/vietlott-research");
@@ -104,8 +113,15 @@ describe("analytics", () => {
     const result=backtestRange(draws,{...DEFAULT_SETTINGS,candidatePoolSize:10},{fromDate:"2026-03-05",toDate:"2026-03-19",trainingDraws:10,predictionCount:2});
     expect(result.rows.map(row=>row.date)).toEqual(["2026-03-12","2026-03-19"]);
     expect(result.rows.every(row=>row.predictions.length<=2&&row.actual.length===6)).toBe(true);
-    expect(result.rows.flatMap(row=>row.predictions).every(prediction=>/^\d{2}-\d{2}-\d{2}$/.test(prediction.triple)&&prediction.insideCount+prediction.outsideCount===6&&prediction.evenCount+prediction.oddCount===6)).toBe(true);
+    expect(result.rows.flatMap(row=>row.predictions).every(prediction=>Number.isFinite(prediction.tripleScore)&&prediction.insideCount+prediction.outsideCount===6&&prediction.evenCount+prediction.oddCount===6)).toBe(true);
     expect(result.distribution.reduce((sum,count)=>sum+count,0)).toBe(result.tests);
+  });
+  it("scores user-entered combinations in a historical backtest",()=>{
+    const manual=[1,2,3,4,7,45];
+    const result=backtestRange(draws,DEFAULT_SETTINGS,{fromDate:"2026-03-19",toDate:"2026-03-19",trainingDraws:10,predictionCount:5,manualCombinations:[manual]});
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].predictions[0].numbers).toEqual(manual);
+    expect(result.rows[0].predictions[0].matches).toBe(6);
   });
   it("calculates advanced frequency and gap statistics from history",()=>{
     expect(calculateRollingFrequency(draws,1)).toEqual({last10:5,last20:7,last30:7,last50:7,last100:7,all:7});
