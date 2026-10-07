@@ -17,6 +17,7 @@ import GameSwitch from "../GameSwitch";
 import DataTable from "../DataTable";
 
 type BacktestPayload={result:ReturnType<typeof import("../analytics").backtestRange>;rolling:ReturnType<typeof import("../analytics").runRollingBacktest>};
+type BacktestTableRow={rank:number;combination:string;triple:string;count:number;rate:number;insideOutside:string;evenOdd:string;matches:number;actual:number[];evaluation:string};
 const backtestCache=new Map<string,BacktestPayload>();
 
 const drawSchema = z.object({
@@ -113,6 +114,7 @@ export function CombinationsPage(){
 }
 export function BacktestPage(){
   const {t}=useI18n();
+  const labels=useTableLabels();
   const {draws:megaDraws,powerDraws,selectedGame,settings}=useLotteryStore();
   const draws=selectedGame==="power655"?powerDraws:megaDraws;
   const maxNumber=LOTTERY_GAMES[selectedGame].maxNumber;
@@ -130,20 +132,30 @@ export function BacktestPage(){
   useEffect(()=>{const next=defaultRange();setFromDate(next.from);setToDate(next.to);setData(null);setFailed(false);},[selectedGame]);
   useEffect(()=>()=>workerRef.current?.terminate(),[]);
   const presets:[string,TranslationKey][]=[["Default","preset.default"],["Balanced","preset.balanced"],["Hot","preset.hot"],["Gap","preset.gap"],["Pair","preset.pair"],["Triple","preset.triple"],["Custom","preset.custom"]];
-  const run=()=>{
+  const run=(override:{preset?:string;predictionCount?:number}={})=>{
     if(!fromDate||!toDate||fromDate>toDate){setFailed(true);setData(null);return;}
     workerRef.current?.terminate();
     setRunning(true);setFailed(false);setData(null);
-    const effectiveSettings=settingsForPreset(settings,preset);
-    const cacheKey=JSON.stringify([selectedGame,draws.map(draw=>[draw.id,draw.date,draw.numbers]),effectiveSettings,fromDate,toDate,trainingDraws,predictionCount]);
+    const activePreset=override.preset??preset;
+    const activePredictionCount=override.predictionCount??predictionCount;
+    const effectiveSettings=settingsForPreset(settings,activePreset);
+    const cacheKey=JSON.stringify([selectedGame,draws.map(draw=>[draw.id,draw.date,draw.numbers]),effectiveSettings,fromDate,toDate,trainingDraws,activePredictionCount]);
     const cached=backtestCache.get(cacheKey);
     if(cached){setData(cached);setRunning(false);return;}
     const worker=new Worker(new URL("../backtest.worker.ts",import.meta.url),{type:"module"});
     workerRef.current=worker;
     worker.onmessage=({data:payload}:MessageEvent<BacktestPayload>)=>{backtestCache.set(cacheKey,payload);setData(payload);setRunning(false);worker.terminate();workerRef.current=null;};
     worker.onerror=()=>{setFailed(true);setRunning(false);worker.terminate();workerRef.current=null;};
-    worker.postMessage({draws,settings:effectiveSettings,maxNumber,fromDate,toDate,trainingDraws,predictionCount});
+    worker.postMessage({draws,settings:effectiveSettings,maxNumber,fromDate,toDate,trainingDraws,predictionCount:activePredictionCount});
   };
+  const tableRows=useMemo<BacktestTableRow[]>(()=>data?.result.rows.flatMap(row=>row.predictions.map((prediction,index)=>({rank:index+1,combination:prediction.numbers.map(pad).join("-"),triple:prediction.triple,count:prediction.count,rate:prediction.rate,insideOutside:`${prediction.insideCount}/${prediction.outsideCount}`,evenOdd:`${prediction.evenCount}/${prediction.oddCount}`,matches:prediction.matches,actual:row.actual,evaluation:t(prediction.matches>=3?"pages.goodResult":"pages.referenceOnly")})))??[],[data,t]);
+  const resultColumns=useMemo<ColumnDef<BacktestTableRow>[]>(()=>[
+    {accessorKey:"combination",header:t("pages.proposedSets",{count:predictionCount}),cell:info=><span className="backtest-combination"><b>#{info.row.original.rank}</b>{info.getValue<string>()}</span>},
+    {accessorKey:"triple",header:t("common.triple")},{accessorKey:"count",header:t("common.count")},{id:"rate",accessorFn:row=>row.rate*100,header:t("pages.rate"),cell:info=>`${info.getValue<number>().toFixed(2)}%`},
+    {accessorKey:"insideOutside",header:t("common.insideOutside")},{accessorKey:"evenOdd",header:t("common.evenOdd")},{accessorKey:"matches",header:t("pages.matchCount"),cell:info=><strong className="backtest-match">{info.getValue<number>()}/6</strong>},
+    {id:"actual",accessorFn:row=>row.actual.map(pad).join("-"),header:t("pages.actualResult"),cell:info=><div className="backtest-actual">{info.row.original.actual.map((number,index)=><NumberBall key={number} number={number} index={index} small/>)}</div>},
+    {accessorKey:"evaluation",header:t("pages.evaluation"),cell:info=><span className={`backtest-grade grade-${Math.min(info.row.original.matches,3)}`}>{info.getValue<string>()}</span>},
+  ],[predictionCount,t]);
   return <div className="backtest-page">
     <PageTitle title={t("pages.backtestTitle")} subtitle={t("pages.backtestSubtitle")}/>
     <Card className="backtest-setup">
@@ -152,18 +164,18 @@ export function BacktestPage(){
         <div className="backtest-field backtest-game"><span>{t("pages.game")}</span><GameSwitch/></div>
         <fieldset className="backtest-dates"><legend><CalendarDays size={14}/>{t("pages.testDateRange")}</legend><label><span>{t("pages.fromDate")}</span><input type="date" min={draws[0]?.date} max={toDate||draws.at(-1)?.date} value={fromDate} onChange={event=>setFromDate(event.target.value)}/></label><label><span>{t("pages.toDate")}</span><input type="date" min={fromDate||draws[0]?.date} max={draws.at(-1)?.date} value={toDate} onChange={event=>setToDate(event.target.value)}/></label></fieldset>
         <label className="backtest-field"><span>{t("pages.trainingWindow")}</span><Select value={trainingDraws} onChange={event=>setTrainingDraws(Number(event.target.value))}><option value={30}>{t("pages.previousDraws",{count:30})}</option><option value={50}>{t("pages.previousDraws",{count:50})}</option><option value={100}>{t("pages.previousDraws",{count:100})}</option></Select></label>
-        <label className="backtest-field"><span>{t("dashboard.scoringPreset")}</span><Select value={preset} onChange={event=>setPreset(event.target.value)}>{presets.map(([value,key])=><option value={value} key={value}>{t(key)}</option>)}</Select></label>
-        <label className="backtest-field"><span>{t("dashboard.predictionCount")}</span><Select value={predictionCount} onChange={event=>setPredictionCount(Number(event.target.value))}>{[5,10,20].map(count=><option value={count} key={count}>Top {count}</option>)}</Select></label>
+        <label className="backtest-field"><span>{t("dashboard.scoringPreset")}</span><Select value={preset} onChange={event=>{const next=event.target.value;setPreset(next);if(data||running)run({preset:next});}}>{presets.map(([value,key])=><option value={value} key={value}>{t(key)}</option>)}</Select></label>
+        <label className="backtest-field"><span>{t("dashboard.predictionCount")}</span><Select value={predictionCount} onChange={event=>{const next=Number(event.target.value);setPredictionCount(next);if(data||running)run({predictionCount:next});}}>{[5,10,20].map(count=><option value={count} key={count}>Top {count}</option>)}</Select></label>
       </div>
       <div className="backtest-note"><Info size={15}/><span>{t("pages.backtestNote")}</span></div>
-      <Button onClick={run} disabled={running}>{running?<LoaderCircle className="spin" size={15}/>:<Play size={15}/>} {running?t("pages.backtestLoading"):t("pages.runBacktest")}</Button>
+      <Button onClick={()=>run()} disabled={running}>{running?<LoaderCircle className="spin" size={15}/>:<Play size={15}/>} {running?t("pages.backtestLoading"):t("pages.runBacktest")}</Button>
     </Card>
     {failed&&<Card className="backtest-loading" role="alert">{t("pages.backtestError")}</Card>}
     {!data&&!failed&&!running&&<Card className="backtest-loading">{t("pages.backtestReady")}</Card>}
     {running&&<Card className="backtest-loading" role="status"><LoaderCircle className="spin" size={18}/>{t("pages.backtestLoading")}</Card>}
     {data&&<>
       <div className="kpi-grid backtest-kpis"><Card><span>{t("pages.tests")}</span><b>{data.result.tests}</b></Card><Card><span>{t("pages.averageMatches")}</span><b>{data.result.average.toFixed(2)}/6</b></Card><Card><span>{t("pages.bestMatch")}</span><b>{data.result.best}/6</b></Card><Card><span>{t("pages.modelHitRate")}</span><b>{(data.rolling.modelTop10HitRate*100).toFixed(1)}%</b></Card></div>
-      <Card className="table-card backtest-results"><CardHeader title={t("pages.backtestResults")} subtitle={t("pages.backtestResultsSubtitle")} action={<span>{t("pages.drawsShown",{count:data.result.rows.length})}</span>}/><div className="table-scroll"><table><thead><tr><th>{t("pages.drawDate")}</th><th>{t("pages.proposedSets",{count:predictionCount})}</th><th>{t("pages.matchCount")}</th><th>{t("pages.actualResult")}</th><th>{t("pages.evaluation")}</th></tr></thead><tbody>{data.result.rows.map(row=><tr key={row.targetId}><td>{format(parseISO(row.date),"dd/MM/yyyy")}</td><td><div className="backtest-predictions">{row.predictions.map((numbers,index)=><span key={index}><b>#{index+1}</b>{numbers.map(pad).join("-")}</span>)}</div></td><td><strong className="backtest-match">{row.bestMatches}/6</strong></td><td><div className="backtest-actual">{row.actual.map((number,index)=><NumberBall key={number} number={number} index={index} small/>)}</div></td><td><span className={`backtest-grade grade-${Math.min(row.bestMatches,3)}`}>{t(row.bestMatches>=3?"pages.goodResult":"pages.referenceOnly")}</span></td></tr>)}{!data.result.rows.length&&<tr><td colSpan={5}><div className="empty-state">{t("pages.noBacktestRows")}</div></td></tr>}</tbody></table></div></Card>
+      <section className="backtest-results" aria-labelledby="backtest-results-title"><div className="backtest-results-heading"><div><h2 id="backtest-results-title">{t("pages.backtestResults")}</h2><p>{t("pages.backtestResultsSubtitle")}</p></div></div><DataTable data={tableRows} columns={resultColumns} labels={labels}/></section>
       <p className="disclaimer"><Info size={14}/>{t("pages.backtestDisclaimer")}</p>
     </>}
   </div>;

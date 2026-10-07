@@ -104,6 +104,7 @@ describe("analytics", () => {
     const result=backtestRange(draws,{...DEFAULT_SETTINGS,candidatePoolSize:10},{fromDate:"2026-03-05",toDate:"2026-03-19",trainingDraws:10,predictionCount:2});
     expect(result.rows.map(row=>row.date)).toEqual(["2026-03-12","2026-03-19"]);
     expect(result.rows.every(row=>row.predictions.length<=2&&row.actual.length===6)).toBe(true);
+    expect(result.rows.flatMap(row=>row.predictions).every(prediction=>/^\d{2}-\d{2}-\d{2}$/.test(prediction.triple)&&prediction.insideCount+prediction.outsideCount===6&&prediction.evenCount+prediction.oddCount===6)).toBe(true);
     expect(result.distribution.reduce((sum,count)=>sum+count,0)).toBe(result.tests);
   });
   it("calculates advanced frequency and gap statistics from history",()=>{

@@ -264,7 +264,8 @@ export function backtest(draws: Draw[], settings: AnalysisSettings, count = 12,m
 }
 
 export type BacktestRangeOptions={fromDate:string;toDate:string;trainingDraws:number;predictionCount:number;maxNumber?:number};
-export type BacktestResultRow={targetId:string;date:string;predictions:number[][];actual:number[];bestMatches:number};
+export type BacktestPrediction=CandidateCombination&{triple:string;count:number;rate:number;matches:number};
+export type BacktestResultRow={targetId:string;date:string;predictions:BacktestPrediction[];actual:number[];bestMatches:number};
 
 export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:BacktestRangeOptions){
   const distribution=[0,0,0,0,0,0,0];
@@ -277,12 +278,17 @@ export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:Bac
     const target=draws[index];
     if(target.date<options.fromDate||target.date>options.toDate||index<trainingDraws)continue;
     const history=draws.slice(index-trainingDraws,index);
-    const predictions=generateCandidates(calculateSingles(history,settings,maxNumber),calculatePairs(history,maxNumber),calculateTriples(history,maxNumber),settings,history).slice(0,predictionCount);
-    const bestMatches=predictions.reduce((current,prediction)=>Math.max(current,prediction.numbers.filter(number=>target.numbers.includes(number)).length),0);
+    const triples=calculateTriples(history,maxNumber);
+    const tripleMap=new Map(triples.map(triple=>[triple.key,triple]));
+    const predictions:BacktestPrediction[]=generateCandidates(calculateSingles(history,settings,maxNumber),calculatePairs(history,maxNumber),triples,settings,history).slice(0,predictionCount).map(candidate=>{
+      const strongest=combinations(candidate.numbers,3).map(numbers=>{const key=numbers.map(pad).join("-");const stat=tripleMap.get(key);return {key,count:stat?.count??0,rate:stat?.rate??0};}).sort((a,b)=>b.count-a.count||a.key.localeCompare(b.key))[0];
+      return {...candidate,triple:strongest.key,count:strongest.count,rate:strongest.rate,matches:candidate.numbers.filter(number=>target.numbers.includes(number)).length};
+    });
+    const bestMatches=predictions.reduce((current,prediction)=>Math.max(current,prediction.matches),0);
     distribution[bestMatches]++;
     totalMatches+=bestMatches;
     best=Math.max(best,bestMatches);
-    rows.push({targetId:target.id,date:target.date,predictions:predictions.map(prediction=>prediction.numbers),actual:target.numbers,bestMatches});
+    rows.push({targetId:target.id,date:target.date,predictions,actual:target.numbers,bestMatches});
   }
   return {distribution,average:rows.length?totalMatches/rows.length:0,best,tests:rows.length,rows};
 }
