@@ -263,6 +263,30 @@ export function backtest(draws: Draw[], settings: AnalysisSettings, count = 12,m
   return { distribution, average: tests ? totalMatches / tests : 0, best, tests };
 }
 
+export type BacktestRangeOptions={fromDate:string;toDate:string;trainingDraws:number;predictionCount:number;maxNumber?:number};
+export type BacktestResultRow={targetId:string;date:string;predictions:number[][];actual:number[];bestMatches:number};
+
+export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:BacktestRangeOptions){
+  const distribution=[0,0,0,0,0,0,0];
+  const rows:BacktestResultRow[]=[];
+  let totalMatches=0,best=0;
+  const trainingDraws=Math.max(10,options.trainingDraws);
+  const predictionCount=Math.max(1,options.predictionCount);
+  const maxNumber=options.maxNumber??45;
+  for(let index=0;index<draws.length;index++){
+    const target=draws[index];
+    if(target.date<options.fromDate||target.date>options.toDate||index<trainingDraws)continue;
+    const history=draws.slice(index-trainingDraws,index);
+    const predictions=generateCandidates(calculateSingles(history,settings,maxNumber),calculatePairs(history,maxNumber),calculateTriples(history,maxNumber),settings,history).slice(0,predictionCount);
+    const bestMatches=predictions.reduce((current,prediction)=>Math.max(current,prediction.numbers.filter(number=>target.numbers.includes(number)).length),0);
+    distribution[bestMatches]++;
+    totalMatches+=bestMatches;
+    best=Math.max(best,bestMatches);
+    rows.push({targetId:target.id,date:target.date,predictions:predictions.map(prediction=>prediction.numbers),actual:target.numbers,bestMatches});
+  }
+  return {distribution,average:rows.length?totalMatches/rows.length:0,best,tests:rows.length,rows};
+}
+
 export function runRollingBacktest(draws:Draw[],settings:AnalysisSettings,targetCount=30,seed=645,maxNumber=45){
   const minimum=Math.max(1,Math.min(settings.backtestMinTrainingDraws??50,draws.length-1));
   const start=Math.max(minimum,draws.length-targetCount);

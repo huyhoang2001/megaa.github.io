@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { BarChart3, ChartNoAxesCombined, ChevronLeft, ChevronRight, History, Menu, Monitor, Moon, Network, Settings, Sparkles, Sun, Target, TicketCheck, X } from "lucide-react";
+import { BarChart3, ChartNoAxesCombined, ChevronLeft, ChevronRight, Clock3, History, Menu, Monitor, Moon, Network, Settings, Sparkles, Sun, Target, TicketCheck, X } from "lucide-react";
 import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { Mascot } from "page-mascot";
 import Dashboard from "./pages/Dashboard";
 import { BacktestPage, CombinationsPage, HistoryPage, PairsPage, SettingsPage, SinglesPage, TriplesPage } from "./pages/Pages";
 import { useLotteryStore } from "./store";
@@ -18,6 +19,7 @@ const nav = [
   ["/analysis", "nav.analysis", Sparkles],
   ["/combinations", "nav.combinations", Sparkles],
   ["/ticket-filter", "nav.ticketFilter", TicketCheck],
+  ["/backtest", "nav.backtest", Clock3],
   ["/settings", "nav.settings", Settings],
 ] as const;
 
@@ -25,8 +27,9 @@ function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobileOpen }: { colla
   const {t}=useI18n();
   const selectedGame=useLotteryStore(state=>state.selectedGame);
   const game=LOTTERY_GAMES[selectedGame];
+  const asset=(name:string)=>`${import.meta.env.BASE_URL}${name}`;
   return <aside className={`sidebar ${collapsed?"collapsed":""} ${mobileOpen?"mobile-open":""}`}>
-    <div className="logo"><span className="logo-ball">6/{game.maxNumber}</span><div><b>{game.shortName}</b><small>ANALYTICS</small></div><button className="mobile-close" onClick={()=>setMobileOpen(false)} aria-label={t("shell.closeMenu")}><X size={18}/></button></div>
+    <div className="logo"><Mascot className="logo-mascot" size={52} directions={asset("tv-directions.webp")} reactions={asset("tv-reactions.webp")} label={t("shell.mascotLabel")}/><div><b>{game.shortName}</b><small>ANALYTICS</small></div><button className="mobile-close" onClick={()=>setMobileOpen(false)} aria-label={t("shell.closeMenu")}><X size={18}/></button></div>
     <nav>{nav.map(([to,labelKey,Icon])=>{const label=t(labelKey as TranslationKey);return <NavLink key={to} to={to} end={to==="/"} onClick={()=>setMobileOpen(false)} title={collapsed?label:undefined}><Icon size={18}/><span>{label}</span></NavLink>;})}</nav>
     <button className="collapse-button" onClick={()=>setCollapsed(!collapsed)} aria-label={collapsed?t("shell.expandSidebar"):t("shell.collapseSidebar")} title={collapsed?t("shell.expandSidebar"):t("shell.collapseSidebar")}>{collapsed?<ChevronRight size={19}/>:<ChevronLeft size={19}/>}</button>
   </aside>;

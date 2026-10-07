@@ -1,14 +1,12 @@
-import { backtest, runRollingBacktest } from "./analytics";
+import { backtestRange, runRollingBacktest } from "./analytics";
 import type { AnalysisSettings, Draw } from "./domain";
 
-type Request = { draws: Draw[]; settings: AnalysisSettings; maxNumber?:number };
+type Request = { draws: Draw[]; settings: AnalysisSettings; maxNumber?:number;fromDate:string;toDate:string;trainingDraws:number;predictionCount:number };
 
 self.onmessage = ({ data }: MessageEvent<Request>) => {
-  // Combination generation is substantially heavier than number-model ranking.
-  // Keep the interactive summary focused on the five latest targets; the worker
-  // prevents this CPU work from blocking navigation or controls.
   const maxNumber=data.maxNumber??45;
-  const result = backtest(data.draws,data.settings,5,maxNumber);
-  const rolling = runRollingBacktest(data.draws,data.settings,30,645,maxNumber);
+  const result=backtestRange(data.draws,data.settings,{fromDate:data.fromDate,toDate:data.toDate,trainingDraws:data.trainingDraws,predictionCount:data.predictionCount,maxNumber});
+  const scopedDraws=data.draws.filter(draw=>draw.date<=data.toDate);
+  const rolling=runRollingBacktest(scopedDraws,{...data.settings,backtestMinTrainingDraws:data.trainingDraws},Math.max(1,result.tests),645,maxNumber);
   self.postMessage({ result, rolling });
 };

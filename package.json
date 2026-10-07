@@ -20,6 +20,7 @@
     "clsx": "latest",
     "date-fns": "latest",
     "lucide-react": "latest",
+    "page-mascot": "^0.1.0",
     "react": "latest",
     "react-dom": "latest",
     "react-hook-form": "latest",
