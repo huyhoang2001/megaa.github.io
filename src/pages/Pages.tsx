@@ -5,7 +5,7 @@ import { useForm } from "react-hook-form";
 import { CalendarDays, Download, Info, LoaderCircle, Pencil, Play, Plus, RotateCcw, Search, Settings2, Trash2, Upload } from "lucide-react";
 import { z } from "zod";
 import type { ColumnDef } from "@tanstack/react-table";
-import { filterCombinationsByNumbers, pad, parseCompactCombinations } from "../analytics";
+import { filterCombinationsByNumbers, getBacktestTrainingWindows, pad, parseCompactCombinations } from "../analytics";
 import { LOTTERY_GAMES } from "../domain";
 import type { CandidateCombination, Draw, PairStats, SingleNumberStats, TripleStats } from "../domain";
 import { settingsForPreset, useAnalytics } from "../hooks";
@@ -118,7 +118,7 @@ export function BacktestPage(){
   const {draws:megaDraws,powerDraws,selectedGame,settings}=useLotteryStore();
   const draws=selectedGame==="power655"?powerDraws:megaDraws;
   const maxNumber=LOTTERY_GAMES[selectedGame].maxNumber;
-  const defaultRange=()=>({from:draws.at(-4)?.date??draws[0]?.date??"",to:draws.at(-1)?.date??""});
+  const defaultRange=()=>({from:draws.at(-51)?.date??draws[0]?.date??"",to:draws.at(-1)?.date??""});
   const initial=defaultRange();
   const [fromDate,setFromDate]=useState(initial.from);
   const [toDate,setToDate]=useState(initial.to);
@@ -133,12 +133,16 @@ export function BacktestPage(){
   const [failed,setFailed]=useState(false);
   const workerRef=useRef<Worker|null>(null);
   const lastManualRef=useRef<number[][]|undefined>(undefined);
-  useEffect(()=>{const next=defaultRange();setFromDate(next.from);setToDate(next.to);setData(null);setFailed(false);},[selectedGame]);
+  useEffect(()=>{const next=defaultRange();setFromDate(next.from);setToDate(next.to);setData(null);setFailed(false);lastManualRef.current=undefined;},[selectedGame]);
   useEffect(()=>()=>workerRef.current?.terminate(),[]);
   const presets:[string,TranslationKey][]=[["Default","preset.default"],["Balanced","preset.balanced"],["Hot","preset.hot"],["Gap","preset.gap"],["Pair","preset.pair"],["Triple","preset.triple"],["Custom","preset.custom"]];
   const parsedManual=useMemo(()=>parseCompactCombinations(manualInput,maxNumber),[manualInput,maxNumber]);
-  const run=(override:{preset?:string;predictionCount?:number;manualResults?:number[][]|null}={})=>{
-    if(!fromDate||!toDate||fromDate>toDate){setFailed(true);setData(null);return;}
+  const trainingAvailability=useMemo(()=>getBacktestTrainingWindows(draws,fromDate,toDate),[draws,fromDate,toDate]);
+  const fullMode=trainingAvailability.windows.includes(trainingDraws);
+  useEffect(()=>{if(!trainingAvailability.windows.includes(trainingDraws))setTrainingDraws(trainingAvailability.windows[0]??30);},[trainingAvailability,trainingDraws]);
+  const run=(override:{preset?:string;predictionCount?:number;trainingDraws?:number;manualResults?:number[][]|null}={})=>{
+    const activeTrainingDraws=override.trainingDraws??trainingDraws;
+    if(!fromDate||!toDate||fromDate>toDate||!trainingAvailability.windows.includes(activeTrainingDraws)){setFailed(true);setData(null);return;}
     workerRef.current?.terminate();
     setRunning(true);setFailed(false);setData(null);
     const activePreset=override.preset??preset;
@@ -147,16 +151,16 @@ export function BacktestPage(){
     lastManualRef.current=activeManual;
     setResultCount(activePredictionCount);
     const effectiveSettings=settingsForPreset(settings,activePreset);
-    const cacheKey=JSON.stringify([selectedGame,draws.map(draw=>[draw.id,draw.date,draw.numbers]),effectiveSettings,fromDate,toDate,trainingDraws,activePredictionCount,activeManual]);
+    const cacheKey=JSON.stringify([selectedGame,draws.map(draw=>[draw.id,draw.date,draw.numbers]),effectiveSettings,fromDate,toDate,activeTrainingDraws,activePredictionCount,activeManual]);
     const cached=backtestCache.get(cacheKey);
     if(cached){setData(cached);setRunning(false);return;}
     const worker=new Worker(new URL("../backtest.worker.ts",import.meta.url),{type:"module"});
     workerRef.current=worker;
     worker.onmessage=({data:payload}:MessageEvent<BacktestPayload>)=>{backtestCache.set(cacheKey,payload);setData(payload);setRunning(false);worker.terminate();workerRef.current=null;};
     worker.onerror=()=>{setFailed(true);setRunning(false);worker.terminate();workerRef.current=null;};
-    worker.postMessage({draws,settings:effectiveSettings,maxNumber,fromDate,toDate,trainingDraws,predictionCount:activePredictionCount,manualResults:activeManual});
+    worker.postMessage({draws,settings:effectiveSettings,maxNumber,fromDate,toDate,trainingDraws:activeTrainingDraws,predictionCount:activePredictionCount,manualResults:activeManual});
   };
-  const runManual=()=>{if(!parsedManual.valid){setManualError(true);return;}setManualError(false);run({manualResults:parsedManual.combinations});};
+  const runManual=()=>{if(!parsedManual.valid||!fullMode){setManualError(!parsedManual.valid);return;}setManualError(false);run({manualResults:parsedManual.combinations});};
   const tableRows=useMemo<BacktestTableRow[]>(()=>data?.result.rows.flatMap(row=>row.predictions.map((prediction,index)=>({rank:index+1,combination:prediction.numbers.map(pad).join("-"),count:prediction.count,rate:prediction.rate,sum:prediction.total,root:prediction.digitalRoot,insideOutside:`${prediction.insideCount}/${prediction.outsideCount}`,evenOdd:`${prediction.evenCount}/${prediction.oddCount}`,single:prediction.singleScore,pair:prediction.pairScore,triple:prediction.tripleScore,structure:prediction.structureScore,totalScore:prediction.totalScore,matches:prediction.matches,actual:row.actual,evaluation:t(prediction.matches>=3?"pages.goodResult":"pages.referenceOnly")})))??[],[data,t]);
   const resultColumns=useMemo<ColumnDef<BacktestTableRow>[]>(()=>[
     {accessorKey:"combination",header:t("pages.proposedSets",{count:resultCount}),cell:info=><span className="backtest-combination"><b>#{info.row.original.rank}</b>{info.getValue<string>()}</span>},
@@ -173,14 +177,15 @@ export function BacktestPage(){
       <CardHeader title={t("pages.backtestSetup")} action={<Settings2 size={17} aria-hidden="true"/>}/>
       <div className="backtest-controls">
         <div className="backtest-field backtest-game"><span>{t("pages.game")}</span><GameSwitch/></div>
-        <fieldset className="backtest-dates"><legend><CalendarDays size={14}/>{t("pages.testDateRange")}</legend><label><span>{t("pages.fromDate")}</span><input type="date" min={draws[0]?.date} max={toDate||draws.at(-1)?.date} value={fromDate} onChange={event=>setFromDate(event.target.value)}/></label><label><span>{t("pages.toDate")}</span><input type="date" min={fromDate||draws[0]?.date} max={draws.at(-1)?.date} value={toDate} onChange={event=>setToDate(event.target.value)}/></label></fieldset>
-        <label className="backtest-field"><span>{t("pages.trainingWindow")}</span><Select value={trainingDraws} onChange={event=>setTrainingDraws(Number(event.target.value))}><option value={30}>{t("pages.previousDraws",{count:30})}</option><option value={50}>{t("pages.previousDraws",{count:50})}</option><option value={100}>{t("pages.previousDraws",{count:100})}</option></Select></label>
+        <fieldset className="backtest-dates"><legend><CalendarDays size={14}/>{t("pages.testDateRange")}</legend><label><span>{t("pages.fromDate")}</span><input type="date" min={draws[0]?.date} max={toDate||draws.at(-1)?.date} value={fromDate} onChange={event=>{setFromDate(event.target.value);setData(null);setFailed(false);}}/></label><label><span>{t("pages.toDate")}</span><input type="date" min={fromDate||draws[0]?.date} max={draws.at(-1)?.date} value={toDate} onChange={event=>{setToDate(event.target.value);setData(null);setFailed(false);}}/></label></fieldset>
+        <label className="backtest-field"><span>{t("pages.trainingWindow")}</span><Select value={trainingDraws} disabled={!trainingAvailability.windows.length} onChange={event=>{const next=Number(event.target.value);setTrainingDraws(next);if(data||running)run({trainingDraws:next});}}>{[30,50,100].map(count=><option value={count} disabled={!trainingAvailability.windows.includes(count)} key={count}>{t("pages.previousDraws",{count})}</option>)}</Select></label>
         <label className="backtest-field"><span>{t("dashboard.scoringPreset")}</span><Select value={preset} onChange={event=>{const next=event.target.value;setPreset(next);if(data||running)run({preset:next});}}>{presets.map(([value,key])=><option value={value} key={value}>{t(key)}</option>)}</Select></label>
         <label className="backtest-field"><span>{t("dashboard.predictionCount")}</span><Select value={predictionCount} onChange={event=>{const next=Number(event.target.value);setPredictionCount(next);if(data||running)run({predictionCount:next});}}>{[5,10,20].map(count=><option value={count} key={count}>Top {count}</option>)}</Select></label>
       </div>
       <div className="backtest-note"><Info size={15}/><span>{t("pages.backtestNote")}</span></div>
-      <div className="manual-test"><label><span>{t("pages.manualInput")}</span><input value={manualInput} onChange={event=>{setManualInput(event.target.value);setManualError(false);}} className={manualError?"invalid":""} aria-invalid={manualError} aria-describedby="manual-test-help" placeholder="093653, 102301"/></label><Button className="secondary" onClick={runManual} disabled={running}><Play size={15}/>{t("pages.runTest")}</Button><small id="manual-test-help">{t("pages.manualInputHint")}</small>{manualError&&<><div className="manual-invalid-values">{parsedManual.entries.map((entry,entryIndex)=>/^\d{6}$/.test(entry)?<span className="manual-entry" key={`${entry}-${entryIndex}`}>{(entry.match(/\d{2}/g)??[]).map((chunk,chunkIndex)=><b className={parsedManual.issues.some(issue=>issue.entryIndex===entryIndex&&(issue.chunkIndex===chunkIndex||issue.chunkIndex===undefined))?"invalid":""} key={chunkIndex}>{chunk}</b>)}</span>:<b className="invalid" key={`${entry}-${entryIndex}`}>{entry}</b>)}</div><p className="manual-error" role="alert">{t("pages.manualInputError",{max:maxNumber})}</p></>}</div>
-      <Button onClick={()=>run({manualResults:null})} disabled={running}>{running?<LoaderCircle className="spin" size={15}/>:<Play size={15}/>} {running?t("pages.backtestLoading"):t("pages.runBacktest")}</Button>
+      <div className={`backtest-mode ${fullMode?"ready":"invalid"}`} role={fullMode?"status":"alert"}>{fullMode?t("pages.fullModeReady",{count:trainingAvailability.priorDraws}):t("pages.trainingRangeError",{count:trainingAvailability.priorDraws})}</div>
+      <div className="manual-test"><label><span>{t("pages.manualInput")}</span><input value={manualInput} onChange={event=>{setManualInput(event.target.value);setManualError(false);}} className={manualError?"invalid":""} aria-invalid={manualError} aria-describedby="manual-test-help" placeholder="093653, 102301"/></label><Button className="secondary" onClick={runManual} disabled={running||!fullMode}><Play size={15}/>{t("pages.runTest")}</Button><small id="manual-test-help">{t("pages.manualInputHint")}</small>{manualError&&<><div className="manual-invalid-values">{parsedManual.entries.map((entry,entryIndex)=>/^\d{6}$/.test(entry)?<span className="manual-entry" key={`${entry}-${entryIndex}`}>{(entry.match(/\d{2}/g)??[]).map((chunk,chunkIndex)=><b className={parsedManual.issues.some(issue=>issue.entryIndex===entryIndex&&(issue.chunkIndex===chunkIndex||issue.chunkIndex===undefined))?"invalid":""} key={chunkIndex}>{chunk}</b>)}</span>:<b className="invalid" key={`${entry}-${entryIndex}`}>{entry}</b>)}</div><p className="manual-error" role="alert">{t("pages.manualInputError",{max:maxNumber})}</p></>}</div>
+      <Button onClick={()=>run({manualResults:null})} disabled={running||!fullMode}>{running?<LoaderCircle className="spin" size={15}/>:<Play size={15}/>} {running?t("pages.backtestLoading"):t("pages.runBacktest")}</Button>
     </Card>
     {failed&&<Card className="backtest-loading" role="alert">{t("pages.backtestError")}</Card>}
     {!data&&!failed&&!running&&<Card className="backtest-loading">{t("pages.backtestReady")}</Card>}

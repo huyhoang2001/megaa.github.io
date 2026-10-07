@@ -289,6 +289,11 @@ export type BacktestRangeOptions={fromDate:string;toDate:string;trainingDraws:nu
 export type BacktestPrediction=CandidateCombination&{count:number;rate:number;matches:number};
 export type BacktestResultRow={targetId:string;date:string;predictions:BacktestPrediction[];actual:number[];bestMatches:number};
 
+export function getBacktestTrainingWindows(draws:Draw[],fromDate:string,toDate:string){
+  const priorDraws=Math.max(0,draws.filter(draw=>draw.date>=fromDate&&draw.date<=toDate).length-1);
+  return {priorDraws,windows:priorDraws>=100?[50,100]:priorDraws>=50?[50]:priorDraws>=30?[30]:[]};
+}
+
 export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:BacktestRangeOptions){
   const distribution=[0,0,0,0,0,0,0];
   const rows:BacktestResultRow[]=[];
@@ -313,16 +318,14 @@ export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:Bac
     rows.push({targetId,date,predictions,actual,bestMatches});
   };
   if(options.manualResults?.length){
-    const history=draws.filter(draw=>draw.date<options.toDate).slice(-trainingDraws);
+    const history=draws.filter(draw=>draw.date>=options.fromDate&&draw.date<options.toDate).slice(-trainingDraws);
     if(history.length===trainingDraws)options.manualResults.forEach((actual,index)=>evaluate(history,actual,`manual-${index+1}`,options.toDate));
     return {distribution,average:rows.length?totalMatches/rows.length:0,best,tests:rows.length,rows};
   }
-  for(let index=0;index<draws.length;index++){
-    const target=draws[index];
-    if(target.date<options.fromDate||target.date>options.toDate||index<trainingDraws)continue;
-    const history=draws.slice(index-trainingDraws,index);
-    evaluate(history,target.numbers,target.id,target.date);
-  }
+  const range=draws.filter(draw=>draw.date>=options.fromDate&&draw.date<=options.toDate);
+  const target=range.at(-1);
+  const history=range.slice(0,-1).slice(-trainingDraws);
+  if(target&&history.length===trainingDraws)evaluate(history,target.numbers,target.id,target.date);
   return {distribution,average:rows.length?totalMatches/rows.length:0,best,tests:rows.length,rows};
 }
 

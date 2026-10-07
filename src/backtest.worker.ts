@@ -6,7 +6,9 @@ type Request = { draws: Draw[]; settings: AnalysisSettings; maxNumber?:number;fr
 self.onmessage = ({ data }: MessageEvent<Request>) => {
   const maxNumber=data.maxNumber??45;
   const result=backtestRange(data.draws,data.settings,{fromDate:data.fromDate,toDate:data.toDate,trainingDraws:data.trainingDraws,predictionCount:data.predictionCount,maxNumber,manualResults:data.manualResults});
-  const scopedDraws=data.draws.filter(draw=>data.manualResults?.length?draw.date<data.toDate:draw.date<=data.toDate);
+  const range=data.draws.filter(draw=>draw.date>=data.fromDate&&draw.date<=data.toDate);
+  const targetDate=data.manualResults?.length?data.toDate:range.at(-1)?.date??data.toDate;
+  const scopedDraws=range.filter(draw=>draw.date<targetDate);
   const rolling=runRollingBacktest(scopedDraws,{...data.settings,backtestMinTrainingDraws:data.trainingDraws},Math.max(1,result.tests),645,maxNumber);
   self.postMessage({ result, rolling });
 };
