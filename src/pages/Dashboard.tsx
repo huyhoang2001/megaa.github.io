@@ -1,10 +1,10 @@
 import { format, parseISO } from "date-fns";
 import { enUS, vi } from "date-fns/locale";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
 import { Info, Maximize2, X } from "lucide-react";
-import { calculateMonthlyDraws, calculateOccurrenceTimeline, digitalRoot, filterCompleteCalendarMonths, pad, round2 } from "../analytics";
+import { calculateMonthlyDraws, calculateOccurrenceTimeline, calculateScoreTimeline, digitalRoot, filterCompleteCalendarMonths, pad, round2 } from "../analytics";
 import { INSIDE_SET } from "../domain";
 import { useAnalytics } from "../hooks";
 import { useLotteryStore } from "../store";
@@ -86,10 +86,20 @@ function DistributionPie({ title, info, data,total }: { title: string; info:stri
   return <div className="mini-pie"><div className="mini-pie-title"><span>{title}</span><MiniPieInfo title={title} info={info}/></div><ResponsiveContainer width="100%" height={128}><PieChart><Pie data={data} innerRadius={33} outerRadius={52} dataKey="value" paddingAngle={2}>{data.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}</Pie><Tooltip formatter={(v) => [`${v} (${((Number(v)/total)*100).toFixed(1)}%)`, t("common.count")]} /></PieChart></ResponsiveContainer><div className="pie-legend">{data.map((x,i)=><span key={x.name}><i style={{background:COLORS[i]}} />{x.name} {x.value}</span>)}</div></div>;
 }
 
+type ScoreTimeline = ReturnType<typeof calculateScoreTimeline>;
+type ScoreValueKey = "single"|"pair"|"triple"|"structure"|"total";
+
+function ScoreHistoryChart({title,data,valueKey,color}:{title:string;data:ScoreTimeline;valueKey:ScoreValueKey;color:string}){
+  const {language,t}=useI18n();
+  const dateLocale=language==="vi"?vi:enUS;
+  const maKey=`${valueKey}Ma20` as keyof ScoreTimeline[number];
+  return <ChartCard title={title} subtitle={t("dashboard.scoreHistorySubtitle")}><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{left:10,right:12,top:8,bottom:24}}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date" minTickGap={28} tickFormatter={value=>format(parseISO(String(value)),"MM/yyyy",{locale:dateLocale})} label={xAxisLabel(t("common.drawDate"))}/><YAxis width={45} domain={[0,100]} label={yAxisLabel(t("common.value"))}/><Tooltip labelFormatter={value=>format(parseISO(String(value)),"dd/MM/yyyy",{locale:dateLocale})} formatter={(value,name)=>[Number(value).toFixed(2),name]}/><Legend iconType="line" iconSize={10} wrapperStyle={{fontSize:9}}/><Line type="monotone" dataKey={valueKey} name={t("common.value")} stroke={color} strokeWidth={2} dot={false} activeDot={{r:4,strokeWidth:2,fill:"var(--chart-surface)"}}/><Line type="monotone" dataKey={maKey} name="MA20" stroke="#ef5b3f" strokeWidth={2.2} strokeDasharray="7 5" dot={false}/></LineChart></ResponsiveContainer></ChartCard>;
+}
+
 export default function Dashboard() {
   const {language,t}=useI18n();
   const dateLocale=language==="vi"?vi:enUS;
-  const { draws,filtered,singles,pairs,triples,predictions,selectedGame,gameConfig } = useAnalytics();
+  const { draws,filtered,singles,pairs,triples,predictions,selectedGame,gameConfig,effectiveSettings } = useAnalytics();
   const { dashboardFilters: filters, updateDashboardFilters } = useLotteryStore();
   const latest = filtered.at(-1);
   const topNumbers = [...singles].sort((a,b)=>b.totalCount-a.totalCount || a.number-b.number).slice(0,10);
@@ -106,6 +116,14 @@ export default function Dashboard() {
   const insideNumbers=Array.from(INSIDE_SET).filter(number=>number<=gameConfig.maxNumber).map(pad).join(", ");
   const visibleDrawIds=new Set(filtered.map(draw=>draw.id));
   const timeline = calculateOccurrenceTimeline(draws).filter(point=>visibleDrawIds.has(point.id));
+  const scoreTimeline=useMemo(()=>calculateScoreTimeline(filtered,singles,pairs,triples,effectiveSettings),[filtered,singles,pairs,triples,effectiveSettings]);
+  const scoreCharts:[string,ScoreValueKey,string][]=[
+    [t("dashboard.singleScoreHistory"),"single","#2f7fc1"],
+    [t("dashboard.pairScoreHistory"),"pair","#e9822a"],
+    [t("dashboard.tripleScoreHistory"),"triple","#238b68"],
+    [t("dashboard.structureScoreHistory"),"structure","#7a5aa6"],
+    [t("dashboard.totalScoreHistory"),"total","#173f56"],
+  ];
   const stateColors: Record<string,string> = {HOT:"#d43d28",DUE:"#e9822a",DROUGHT:"#7b8794",NEUTRAL:"#1f8b63",COOL:"#2a68a8"};
   const scatterData: ScatterPoint[] = singles.map(item=>{
     const xJitter=(((item.number*17)%7)-3)*.12;
@@ -149,6 +167,10 @@ export default function Dashboard() {
       <Card className="latest-card"><CardHeader title={t("dashboard.latestDraw")} subtitle={latest ? format(parseISO(latest.date),"dd/MM/yyyy") : undefined} />{latest ? <><div className="balls">{latest.numbers.map((n,i)=><NumberBall key={n} number={n} index={i} />)}{selectedGame==="power655"&&latest.bonus&&<><span className="bonus-separator">+</span><NumberBall number={latest.bonus} index={5}/></>}</div><div className={`jackpot ${selectedGame==="power655"?"power-jackpots":""}`}><div><span>{selectedGame==="power655"?t("common.jackpot1"):t("common.jackpot")}</span><b>{latest.jackpot?`${money.format(latest.jackpot)} VND`:t("common.unavailable")}</b></div>{selectedGame==="power655"&&<div><span>{t("common.jackpot2")}</span><b>{latest.jackpot2?`${money.format(latest.jackpot2)} VND`:t("common.unavailable")}</b></div>}</div><div className="metric-strip"><div><span>{t("common.total")}</span><b>{latest.numbers.reduce((a,b)=>a+b,0)}</b></div><div><span>{t("common.digitalRoot")}</span><b>{digitalRoot(latest.numbers.reduce((a,b)=>a+b,0))}</b></div><div><span>{t("common.evenOdd")}</span><b>{latest.numbers.filter(n=>n%2===0).length}/{latest.numbers.filter(n=>n%2!==0).length}</b></div><div><span>{t("common.insideOutside")}</span><b>{latest.numbers.filter(n=>INSIDE_SET.has(n)).length}/{latest.numbers.filter(n=>!INSIDE_SET.has(n)).length}</b></div></div></> : <EmptyState />}</Card>
       <Card className="predictions-card"><CardHeader title={t("dashboard.topPredictions")} subtitle={t("dashboard.topByConsensus",{count:filters.predictionCount})} action={<span title={t("dashboard.disclaimer")}><Info size={16}/></span>} /><div className="prediction-table"><div className="prediction-head"><span>{t("common.rank")}</span><span>{t("common.combination")}</span><span>{t("common.score")}</span></div>{predictions.slice(0,filters.predictionCount).map((p,i)=><details className="prediction-detail" key={p.numbers.join("-")}><summary className="prediction-row"><b className={`rank rank-${i+1}`}>{i+1}</b><span className="combo">{p.numbers.map(pad).join("-")} <small>{p.confidence}</small></span><ScoreBadge score={p.totalScore}/></summary><div className="prediction-breakdown"><span>{t("prediction.consensusNumbers")} <b>{p.singleScore.toFixed(1)}</b></span><span>{t("prediction.pairAssociation")} <b>{p.pairScore.toFixed(1)}</b></span><span>{t("prediction.tripleAssociation")} <b>{p.tripleScore.toFixed(1)}</b></span><span>{t("prediction.structure")} <b>{p.structureScore.toFixed(1)}</b></span><span>{t("prediction.novelty")} <b>{p.noveltyScore.toFixed(1)}</b></span><span>{t("prediction.maxOverlap")} <b>{p.maxHistoricalOverlap}/6</b></span></div></details>)}</div></Card>
       <Card className="distribution-card"><CardHeader title={t("dashboard.numberDistribution")} subtitle={t("dashboard.fullSpace",{max:gameConfig.maxNumber})} /><div className="distribution-pies"><DistributionPie total={gameConfig.maxNumber} title={t("common.insideOutside")} info={t("dashboard.insideOutsideInfo",{numbers:insideNumbers})} data={[{name:t("common.inside"),value:insideTotal},{name:t("common.outside"),value:gameConfig.maxNumber-insideTotal}]} /><DistributionPie total={gameConfig.maxNumber} title={t("common.evenOdd")} info={t("dashboard.evenOddInfo")} data={[{name:t("common.even"),value:Math.floor(gameConfig.maxNumber/2)},{name:t("common.odd"),value:Math.ceil(gameConfig.maxNumber/2)}]} /></div></Card>
+    </section>
+
+    <section className="chart-grid score-history-grid" aria-label={t("dashboard.scoreHistoryGroup")}>
+      {scoreCharts.map(([title,valueKey,color])=><ScoreHistoryChart key={valueKey} title={title} data={scoreTimeline} valueKey={valueKey} color={color}/>)}
     </section>
 
     {analysisView==="Combinations"&&<Card className="view-note"><b>{t("dashboard.combinationView")}</b><span>{t("dashboard.combinationViewNote")}</span></Card>}

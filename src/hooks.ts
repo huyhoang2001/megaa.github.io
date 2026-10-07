@@ -26,6 +26,6 @@ export function useAnalytics() {
     const pairs = calculatePairs(filtered,gameConfig.maxNumber);
     const triples = calculateTriples(filtered,gameConfig.maxNumber);
     const predictions = generateCandidates(singles, pairs, triples, effectiveSettings, filtered);
-    return { draws,filtered,singles,pairs,triples,predictions,selectedGame,gameConfig };
+    return { draws,filtered,singles,pairs,triples,predictions,selectedGame,gameConfig,effectiveSettings };
   }, [megaDraws,powerDraws,selectedGame,settings,dashboardFilters]);
 }

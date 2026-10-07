@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculateRollingFrequency, calculateSingles, calculateTriples, calculateWeightedFrequency, digitalRoot, filterCombinationsByNumbers, filterCompleteCalendarMonths, filterDraws, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, round2, runRollingBacktest } from "./analytics";
+import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, digitalRoot, filterCombinationsByNumbers, filterCompleteCalendarMonths, filterDraws, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, round2, runRollingBacktest } from "./analytics";
 import { DEFAULT_SETTINGS, INSIDE_SET } from "./domain";
 import type { Draw } from "./domain";
 import history from "./data/mega645-history.json";
@@ -57,6 +57,15 @@ describe("analytics", () => {
     expect(new Set(timeline.map(x=>x.historicalFrequency)).size).toBeGreaterThan(1);
     expect(timeline.every(x=>Number.isFinite(x.ma20))).toBe(true);
     expect(timeline.at(-1)?.ma20).toBe(round2(timeline.slice(-20).reduce((sum,item)=>sum+item.historicalFrequency,0)/20));
+  });
+  it("builds all five score timelines with a 20-period moving average",()=>{
+    const singles=calculateSingles(draws,DEFAULT_SETTINGS);
+    const pairs=calculatePairs(draws);
+    const triples=calculateTriples(draws);
+    const timeline=calculateScoreTimeline(draws,singles,pairs,triples,DEFAULT_SETTINGS);
+    expect(timeline).toHaveLength(draws.length);
+    expect(timeline.every(point=>[point.single,point.pair,point.triple,point.structure,point.total,point.singleMa20,point.pairMa20,point.tripleMa20,point.structureMa20,point.totalMa20].every(Number.isFinite))).toBe(true);
+    expect(timeline.at(-1)?.singleMa20).toBe(round2(timeline.reduce((sum,point)=>sum+point.single,0)/timeline.length));
   });
   it("groups draw density by calendar month", () => {
     const real=history.draws as Draw[];

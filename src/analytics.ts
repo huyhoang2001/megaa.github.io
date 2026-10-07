@@ -249,6 +249,31 @@ export function scoreCandidateCombinations(numberSets:number[][],singles:SingleN
   });
 }
 
+export function calculateScoreTimeline(draws:Draw[],singles:SingleNumberStats[],pairs:PairStats[],triples:TripleStats[],settings:AnalysisSettings){
+  const scored=scoreCandidateCombinations(draws.map(draw=>draw.numbers),singles,pairs,triples,settings,draws);
+  const points=scored.map((score,index)=>({
+    id:draws[index].id,
+    date:draws[index].date,
+    single:round2(score.singleScore),
+    pair:round2(score.pairScore),
+    triple:round2(score.tripleScore),
+    structure:round2(score.structureScore),
+    total:round2(score.totalScore),
+  }));
+  const movingAverage=(key:"single"|"pair"|"triple"|"structure"|"total",index:number)=>{
+    const window=points.slice(Math.max(0,index-19),index+1);
+    return round2(mean(window.map(point=>point[key])));
+  };
+  return points.map((point,index)=>({
+    ...point,
+    singleMa20:movingAverage("single",index),
+    pairMa20:movingAverage("pair",index),
+    tripleMa20:movingAverage("triple",index),
+    structureMa20:movingAverage("structure",index),
+    totalMa20:movingAverage("total",index),
+  }));
+}
+
 export function generateCandidates(singles: SingleNumberStats[], pairs: PairStats[], triples: TripleStats[], settings: AnalysisSettings, history:Draw[]=[]): CandidateCombination[] {
   const ranked = [...singles].sort((a, b) => b.technicalScore - a.technicalScore || a.number - b.number);
   // The inside preference can otherwise fill the entire pool with inside numbers,
