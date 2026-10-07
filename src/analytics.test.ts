@@ -89,13 +89,14 @@ describe("analytics", () => {
     expect(filterCombinationsByNumbers(items,"none")).toEqual([]);
   });
   it("parses compact manual combinations and identifies invalid segments",()=>{
-    const mega=parseCompactCombinations("093653, 102301",45);
-    expect(mega.valid).toBe(false);
-    expect(mega.issues.some(issue=>issue.value==="53")).toBe(true);
-    const power=parseCompactCombinations("093653, 102301",55);
+    const mega=parseCompactCombinations("101436374143",45);
+    expect(mega.valid).toBe(true);
+    expect(mega.combinations).toEqual([[10,14,36,37,41,43]]);
+    const power=parseCompactCombinations("01 09 10 23 36 53",55);
     expect(power.valid).toBe(true);
     expect(power.combinations).toEqual([[1,9,10,23,36,53]]);
-    expect(parseCompactCombinations("09365, 102301",55).issues[0].value).toBe("09365");
+    expect(parseCompactCombinations("101436374153",45).issues.some(issue=>issue.value==="53")).toBe(true);
+    expect(parseCompactCombinations("101436",45).issues[0].value).toBe("101436");
   });
   it("loads valid Power 6/55 history with a distinct bonus number",()=>{
     const power=powerHistory.draws as Draw[];

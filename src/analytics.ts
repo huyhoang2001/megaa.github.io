@@ -16,19 +16,14 @@ export type CompactCombinationIssue={entryIndex:number;chunkIndex?:number;value:
 export function parseCompactCombinations(input:string,maxNumber:number){
   const entries=input.split(/[,\n]+/).map(value=>value.trim()).filter(Boolean);
   const issues:CompactCombinationIssue[]=[];
-  const chunks=entries.map((entry,entryIndex)=>{
-    if(!/^\d{6}$/.test(entry)){issues.push({entryIndex,value:entry});return [] as number[];}
-    return (entry.match(/\d{2}/g)??[]).map((value,chunkIndex)=>{const number=Number(value);if(number<1||number>maxNumber)issues.push({entryIndex,chunkIndex,value});return number;});
+  const combinations=entries.flatMap((entry,entryIndex)=>{
+    const compact=entry.replace(/[\s-]+/g,"");
+    if(!/^\d{12}$/.test(compact)){issues.push({entryIndex,value:entry});return [];}
+    const numbers=(compact.match(/\d{2}/g)??[]).map((value,chunkIndex)=>{const number=Number(value);if(number<1||number>maxNumber)issues.push({entryIndex,chunkIndex,value});return number;});
+    numbers.forEach((number,chunkIndex)=>{if(numbers.indexOf(number)!==chunkIndex)issues.push({entryIndex,chunkIndex,value:pad(number)});});
+    return issues.some(issue=>issue.entryIndex===entryIndex)?[]:[numbers.sort((a,b)=>a-b)];
   });
-  if(entries.length%2===1&&entries.length)issues.push({entryIndex:entries.length-1,value:entries.at(-1)!});
-  const combinations:number[][]=[];
-  for(let index=0;index+1<entries.length;index+=2){
-    if(issues.some(issue=>issue.entryIndex===index||issue.entryIndex===index+1))continue;
-    const numbers=[...chunks[index],...chunks[index+1]];
-    numbers.forEach((number,numberIndex)=>{if(numbers.indexOf(number)!==numberIndex)issues.push({entryIndex:index+Math.floor(numberIndex/3),chunkIndex:numberIndex%3,value:pad(number)});});
-    if(!issues.some(issue=>issue.entryIndex===index||issue.entryIndex===index+1))combinations.push(numbers.sort((a,b)=>a-b));
-  }
-  return {entries,issues,combinations,valid:entries.length>=2&&issues.length===0};
+  return {entries,issues,combinations,valid:entries.length>0&&issues.length===0};
 }
 export const digitalRoot = (n: number) => n <= 0 ? 0 : 1 + ((n - 1) % 9);
 export const combinations = <T,>(items: T[], size: number): T[][] => {
