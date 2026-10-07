@@ -196,3 +196,16 @@ tbody tr:last-child>td{border-bottom:0}
 [data-theme="dark"] .column-filter-actions button.active,[data-theme="dark"] .column-filter.active{border-color:#5d9fc3;background:#1e465a;color:#b9e3f8}
 @media(max-width:900px){.column-filter-panel{grid-template-columns:1fr auto}.column-filter-panel>strong{padding-right:32px}.column-filter-actions{grid-column:2}.column-filter-panel>label{grid-column:1/-1}.column-clear{justify-self:start}.column-panel-close{position:absolute;top:9px;right:10px}}
 @media(max-width:640px){.data-table-toolbar{align-items:flex-start;flex-direction:column;padding:9px 10px}.table-reset{width:100%}.column-filter-panel{display:flex;align-items:stretch;flex-direction:column;padding:11px}.column-filter-actions{display:grid;grid-template-columns:1fr 1fr;padding-right:38px}.column-filter-panel>label{grid-template-columns:1fr}.column-filter-panel small{grid-column:1}.column-clear{width:100%}}
+
+/* Accessible definitions for Number Distribution categories. */
+.mini-pie-title{display:flex;align-items:center;justify-content:center;gap:5px}
+.mini-pie-info{position:relative;height:16px}
+.mini-pie-info summary{width:16px;height:16px;display:grid;place-items:center;border-radius:50%;color:var(--muted);cursor:pointer;list-style:none}
+.mini-pie-info summary::-webkit-details-marker{display:none}
+.mini-pie-info summary:hover{background:var(--table-hover);color:var(--ink)}
+.mini-pie-info summary:focus-visible{background:var(--table-hover);color:var(--ink);outline:2px solid #4b91b9;outline-offset:2px}
+.mini-pie-info[open] summary{background:#dceef7;color:#16587e}
+.mini-pie-info>div{position:absolute;z-index:5;top:22px;left:50%;width:220px;padding:8px 9px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);box-shadow:0 8px 24px rgba(27,52,68,.16);font-size:9px;font-weight:500;line-height:1.45;text-align:left;transform:translateX(-50%)}
+.mini-pie:first-child .mini-pie-info>div{left:-70px;transform:none}
+.mini-pie:last-child .mini-pie-info>div{right:-70px;left:auto;transform:none}
+[data-theme="dark"] .mini-pie-info[open] summary{background:#1e465a;color:#b9e3f8}
