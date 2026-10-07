@@ -66,9 +66,24 @@ function ChartCard({ title, subtitle, children }: { title: string; subtitle?: st
   </>;
 }
 
+export function MiniPieInfo({title,info}:{title:string;info:string}){
+  const [open,setOpen]=useState(false);
+  const root=useRef<HTMLDivElement>(null);
+  const popupId=`mini-pie-${useId().replace(/:/g,"")}`;
+  useEffect(()=>{
+    if(!open)return;
+    const dismiss=(event:Event)=>{if(!root.current?.contains(event.target as Node))setOpen(false);};
+    const escape=(event:KeyboardEvent)=>{if(event.key==="Escape")setOpen(false);};
+    document.addEventListener("pointerdown",dismiss);
+    document.addEventListener("keydown",escape);
+    return()=>{document.removeEventListener("pointerdown",dismiss);document.removeEventListener("keydown",escape);};
+  },[open]);
+  return <div ref={root} className={`mini-pie-info ${open?"open":""}`}><button type="button" onClick={()=>setOpen(value=>!value)} aria-label={`${title}: ${info}`} aria-expanded={open} aria-controls={popupId} title={info}><Info size={13}/></button>{open&&<div id={popupId} role="tooltip">{info}</div>}</div>;
+}
+
 function DistributionPie({ title, info, data,total }: { title: string; info:string; data: { name: string; value: number }[];total:number }) {
   const {t}=useI18n();
-  return <div className="mini-pie"><div className="mini-pie-title"><span>{title}</span><details className="mini-pie-info"><summary aria-label={`${title}: ${info}`} title={info}><Info size={13}/></summary><div>{info}</div></details></div><ResponsiveContainer width="100%" height={128}><PieChart><Pie data={data} innerRadius={33} outerRadius={52} dataKey="value" paddingAngle={2}>{data.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}</Pie><Tooltip formatter={(v) => [`${v} (${((Number(v)/total)*100).toFixed(1)}%)`, t("common.count")]} /></PieChart></ResponsiveContainer><div className="pie-legend">{data.map((x,i)=><span key={x.name}><i style={{background:COLORS[i]}} />{x.name} {x.value}</span>)}</div></div>;
+  return <div className="mini-pie"><div className="mini-pie-title"><span>{title}</span><MiniPieInfo title={title} info={info}/></div><ResponsiveContainer width="100%" height={128}><PieChart><Pie data={data} innerRadius={33} outerRadius={52} dataKey="value" paddingAngle={2}>{data.map((_, i) => <Cell key={i} fill={COLORS[i]} />)}</Pie><Tooltip formatter={(v) => [`${v} (${((Number(v)/total)*100).toFixed(1)}%)`, t("common.count")]} /></PieChart></ResponsiveContainer><div className="pie-legend">{data.map((x,i)=><span key={x.name}><i style={{background:COLORS[i]}} />{x.name} {x.value}</span>)}</div></div>;
 }
 
 export default function Dashboard() {
@@ -88,6 +103,7 @@ export default function Dashboard() {
   const monthlySource=filters.period==="last6months"?filterCompleteCalendarMonths(draws,6):filters.period==="last1year"?filterCompleteCalendarMonths(draws,12):filters.period==="all"?filterCompleteCalendarMonths(draws):filtered;
   const monthly = calculateMonthlyDraws(monthlySource);
   const insideTotal=Array.from({length:gameConfig.maxNumber},(_,index)=>index+1).filter(number=>INSIDE_SET.has(number)).length;
+  const insideNumbers=Array.from(INSIDE_SET).filter(number=>number<=gameConfig.maxNumber).map(pad).join(", ");
   const visibleDrawIds=new Set(filtered.map(draw=>draw.id));
   const timeline = calculateOccurrenceTimeline(draws).filter(point=>visibleDrawIds.has(point.id));
   const stateColors: Record<string,string> = {HOT:"#d43d28",DUE:"#e9822a",DROUGHT:"#7b8794",NEUTRAL:"#1f8b63",COOL:"#2a68a8"};
@@ -132,7 +148,7 @@ export default function Dashboard() {
     <section className="overview-grid">
       <Card className="latest-card"><CardHeader title={t("dashboard.latestDraw")} subtitle={latest ? format(parseISO(latest.date),"dd/MM/yyyy") : undefined} />{latest ? <><div className="balls">{latest.numbers.map((n,i)=><NumberBall key={n} number={n} index={i} />)}{selectedGame==="power655"&&latest.bonus&&<><span className="bonus-separator">+</span><NumberBall number={latest.bonus} index={5}/></>}</div><div className={`jackpot ${selectedGame==="power655"?"power-jackpots":""}`}><div><span>{selectedGame==="power655"?t("common.jackpot1"):t("common.jackpot")}</span><b>{latest.jackpot?`${money.format(latest.jackpot)} VND`:t("common.unavailable")}</b></div>{selectedGame==="power655"&&<div><span>{t("common.jackpot2")}</span><b>{latest.jackpot2?`${money.format(latest.jackpot2)} VND`:t("common.unavailable")}</b></div>}</div><div className="metric-strip"><div><span>{t("common.total")}</span><b>{latest.numbers.reduce((a,b)=>a+b,0)}</b></div><div><span>{t("common.digitalRoot")}</span><b>{digitalRoot(latest.numbers.reduce((a,b)=>a+b,0))}</b></div><div><span>{t("common.evenOdd")}</span><b>{latest.numbers.filter(n=>n%2===0).length}/{latest.numbers.filter(n=>n%2!==0).length}</b></div><div><span>{t("common.insideOutside")}</span><b>{latest.numbers.filter(n=>INSIDE_SET.has(n)).length}/{latest.numbers.filter(n=>!INSIDE_SET.has(n)).length}</b></div></div></> : <EmptyState />}</Card>
       <Card className="predictions-card"><CardHeader title={t("dashboard.topPredictions")} subtitle={t("dashboard.topByConsensus",{count:filters.predictionCount})} action={<span title={t("dashboard.disclaimer")}><Info size={16}/></span>} /><div className="prediction-table"><div className="prediction-head"><span>{t("common.rank")}</span><span>{t("common.combination")}</span><span>{t("common.score")}</span></div>{predictions.slice(0,filters.predictionCount).map((p,i)=><details className="prediction-detail" key={p.numbers.join("-")}><summary className="prediction-row"><b className={`rank rank-${i+1}`}>{i+1}</b><span className="combo">{p.numbers.map(pad).join("-")} <small>{p.confidence}</small></span><ScoreBadge score={p.totalScore}/></summary><div className="prediction-breakdown"><span>{t("prediction.consensusNumbers")} <b>{p.singleScore.toFixed(1)}</b></span><span>{t("prediction.pairAssociation")} <b>{p.pairScore.toFixed(1)}</b></span><span>{t("prediction.tripleAssociation")} <b>{p.tripleScore.toFixed(1)}</b></span><span>{t("prediction.structure")} <b>{p.structureScore.toFixed(1)}</b></span><span>{t("prediction.novelty")} <b>{p.noveltyScore.toFixed(1)}</b></span><span>{t("prediction.maxOverlap")} <b>{p.maxHistoricalOverlap}/6</b></span></div></details>)}</div></Card>
-      <Card className="distribution-card"><CardHeader title={t("dashboard.numberDistribution")} subtitle={t("dashboard.fullSpace")} /><div className="distribution-pies"><DistributionPie total={gameConfig.maxNumber} title={t("common.insideOutside")} info={t("dashboard.insideOutsideInfo")} data={[{name:t("common.inside"),value:insideTotal},{name:t("common.outside"),value:gameConfig.maxNumber-insideTotal}]} /><DistributionPie total={gameConfig.maxNumber} title={t("common.evenOdd")} info={t("dashboard.evenOddInfo")} data={[{name:t("common.even"),value:Math.floor(gameConfig.maxNumber/2)},{name:t("common.odd"),value:Math.ceil(gameConfig.maxNumber/2)}]} /></div></Card>
+      <Card className="distribution-card"><CardHeader title={t("dashboard.numberDistribution")} subtitle={t("dashboard.fullSpace",{max:gameConfig.maxNumber})} /><div className="distribution-pies"><DistributionPie total={gameConfig.maxNumber} title={t("common.insideOutside")} info={t("dashboard.insideOutsideInfo",{numbers:insideNumbers})} data={[{name:t("common.inside"),value:insideTotal},{name:t("common.outside"),value:gameConfig.maxNumber-insideTotal}]} /><DistributionPie total={gameConfig.maxNumber} title={t("common.evenOdd")} info={t("dashboard.evenOddInfo")} data={[{name:t("common.even"),value:Math.floor(gameConfig.maxNumber/2)},{name:t("common.odd"),value:Math.ceil(gameConfig.maxNumber/2)}]} /></div></Card>
     </section>
 
     {analysisView==="Combinations"&&<Card className="view-note"><b>{t("dashboard.combinationView")}</b><span>{t("dashboard.combinationViewNote")}</span></Card>}

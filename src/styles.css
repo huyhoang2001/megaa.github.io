@@ -209,15 +209,14 @@ tbody tr:last-child>td{border-bottom:0}
 /* Accessible definitions for Number Distribution categories. */
 .mini-pie-title{display:flex;align-items:center;justify-content:center;gap:5px}
 .mini-pie-info{position:relative;height:16px}
-.mini-pie-info summary{width:16px;height:16px;display:grid;place-items:center;border-radius:50%;color:var(--muted);cursor:pointer;list-style:none}
-.mini-pie-info summary::-webkit-details-marker{display:none}
-.mini-pie-info summary:hover{background:var(--table-hover);color:var(--ink)}
-.mini-pie-info summary:focus-visible{background:var(--table-hover);color:var(--ink);outline:2px solid #4b91b9;outline-offset:2px}
-.mini-pie-info[open] summary{background:#dceef7;color:#16587e}
+.mini-pie-info>button{width:16px;height:16px;padding:0;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer}
+.mini-pie-info>button:hover{background:var(--table-hover);color:var(--ink)}
+.mini-pie-info>button:focus-visible{background:var(--table-hover);color:var(--ink);outline:2px solid #4b91b9;outline-offset:2px}
+.mini-pie-info.open>button{background:#dceef7;color:#16587e}
 .mini-pie-info>div{position:absolute;z-index:5;top:22px;left:50%;width:220px;padding:8px 9px;border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink);box-shadow:0 8px 24px rgba(27,52,68,.16);font-size:9px;font-weight:500;line-height:1.45;text-align:left;transform:translateX(-50%)}
 .mini-pie:first-child .mini-pie-info>div{left:-70px;transform:none}
 .mini-pie:last-child .mini-pie-info>div{right:-70px;left:auto;transform:none}
-[data-theme="dark"] .mini-pie-info[open] summary{background:#1e465a;color:#b9e3f8}
+[data-theme="dark"] .mini-pie-info.open>button{background:#1e465a;color:#b9e3f8}
 
 /* Compact manual backtest input and wide, horizontally scrollable score table. */
 .manual-test{margin:0 16px 12px;padding:12px;display:grid;grid-template-columns:minmax(280px,1fr) auto;align-items:end;gap:7px 10px;border:1px solid var(--line);border-radius:12px;background:#f8fafb}.manual-test label{display:grid;gap:6px;color:var(--muted);font-size:10px;font-weight:750;text-transform:uppercase;letter-spacing:.04em}.manual-test input{height:40px;padding:0 11px;border:1px solid var(--line);border-radius:10px;background:var(--surface);color:var(--ink);font:700 12px "Cascadia Code","SFMono-Regular",monospace;outline:0}.manual-test input:focus{border-color:#16a18e;box-shadow:0 0 0 3px rgba(16,157,141,.14)}.manual-test input.invalid{border-color:#d9473b;box-shadow:0 0 0 3px rgba(217,71,59,.12)}.manual-test>small{grid-column:1/-1;color:var(--muted);font-size:9px}.manual-invalid-values{grid-column:1/-1;display:flex;flex-wrap:wrap;gap:5px}.manual-entry{display:inline-flex;gap:2px;padding:4px 6px;border-radius:7px;background:var(--surface);font:700 10px "Cascadia Code","SFMono-Regular",monospace}.manual-invalid-values b{font-weight:700}.manual-invalid-values .invalid{padding:1px 3px;border-radius:4px;background:#fee4e1;color:#bd2e24}.manual-error{grid-column:1/-1;margin:0;color:#bd2e24;font-size:10px;font-weight:650}.backtest-results .table-scroll{max-width:100%;overflow-x:scroll;scrollbar-gutter:stable}.backtest-results table{min-width:1660px}.backtest-results th:first-child,.backtest-results td:first-child{position:sticky;left:0;z-index:1}.backtest-results th:first-child{z-index:3}.backtest-results td:first-child{box-shadow:1px 0 0 var(--table-border)}.backtest-results tbody tr:nth-child(odd)>td:first-child{background:var(--table-row-alt)}[data-theme="dark"] .manual-test{background:#101d25}[data-theme="dark"] .manual-invalid-values .invalid{background:#472620;color:#ff9b89}
