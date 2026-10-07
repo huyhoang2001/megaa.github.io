@@ -116,12 +116,15 @@ describe("analytics", () => {
     expect(result.rows.flatMap(row=>row.predictions).every(prediction=>Number.isFinite(prediction.tripleScore)&&prediction.insideCount+prediction.outsideCount===6&&prediction.evenCount+prediction.oddCount===6)).toBe(true);
     expect(result.distribution.reduce((sum,count)=>sum+count,0)).toBe(result.tests);
   });
-  it("scores user-entered combinations in a historical backtest",()=>{
-    const manual=[1,2,3,4,7,45];
-    const result=backtestRange(draws,DEFAULT_SETTINGS,{fromDate:"2026-03-19",toDate:"2026-03-19",trainingDraws:10,predictionCount:5,manualCombinations:[manual]});
+  it("builds Top N proposals before a user-entered result date",()=>{
+    const actual=[1,2,3,4,7,45];
+    const options={fromDate:"2026-03-19",toDate:"2026-03-19",trainingDraws:10,predictionCount:2};
+    const historical=backtestRange(draws,DEFAULT_SETTINGS,options);
+    const result=backtestRange(draws,DEFAULT_SETTINGS,{...options,manualResults:[actual]});
     expect(result.rows).toHaveLength(1);
-    expect(result.rows[0].predictions[0].numbers).toEqual(manual);
-    expect(result.rows[0].predictions[0].matches).toBe(6);
+    expect(result.rows[0].actual).toEqual(actual);
+    expect(result.rows[0].predictions).toHaveLength(2);
+    expect(result.rows[0].predictions.map(prediction=>prediction.numbers)).toEqual(historical.rows[0].predictions.map(prediction=>prediction.numbers));
   });
   it("calculates advanced frequency and gap statistics from history",()=>{
     expect(calculateRollingFrequency(draws,1)).toEqual({last10:5,last20:7,last30:7,last50:7,last100:7,all:7});

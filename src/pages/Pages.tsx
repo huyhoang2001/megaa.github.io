@@ -127,7 +127,6 @@ export function BacktestPage(){
   const [predictionCount,setPredictionCount]=useState(5);
   const [manualInput,setManualInput]=useState("");
   const [manualError,setManualError]=useState(false);
-  const [resultMode,setResultMode]=useState<"generated"|"manual">("generated");
   const [resultCount,setResultCount]=useState(5);
   const [data,setData]=useState<BacktestPayload|null>(null);
   const [running,setRunning]=useState(false);
@@ -138,16 +137,15 @@ export function BacktestPage(){
   useEffect(()=>()=>workerRef.current?.terminate(),[]);
   const presets:[string,TranslationKey][]=[["Default","preset.default"],["Balanced","preset.balanced"],["Hot","preset.hot"],["Gap","preset.gap"],["Pair","preset.pair"],["Triple","preset.triple"],["Custom","preset.custom"]];
   const parsedManual=useMemo(()=>parseCompactCombinations(manualInput,maxNumber),[manualInput,maxNumber]);
-  const run=(override:{preset?:string;predictionCount?:number;manualCombinations?:number[][]|null}={})=>{
+  const run=(override:{preset?:string;predictionCount?:number;manualResults?:number[][]|null}={})=>{
     if(!fromDate||!toDate||fromDate>toDate){setFailed(true);setData(null);return;}
     workerRef.current?.terminate();
     setRunning(true);setFailed(false);setData(null);
     const activePreset=override.preset??preset;
     const activePredictionCount=override.predictionCount??predictionCount;
-    const activeManual=override.manualCombinations===null?undefined:override.manualCombinations??lastManualRef.current;
+    const activeManual=override.manualResults===null?undefined:override.manualResults??lastManualRef.current;
     lastManualRef.current=activeManual;
-    setResultMode(activeManual?"manual":"generated");
-    setResultCount(activeManual?.length??activePredictionCount);
+    setResultCount(activePredictionCount);
     const effectiveSettings=settingsForPreset(settings,activePreset);
     const cacheKey=JSON.stringify([selectedGame,draws.map(draw=>[draw.id,draw.date,draw.numbers]),effectiveSettings,fromDate,toDate,trainingDraws,activePredictionCount,activeManual]);
     const cached=backtestCache.get(cacheKey);
@@ -156,19 +154,19 @@ export function BacktestPage(){
     workerRef.current=worker;
     worker.onmessage=({data:payload}:MessageEvent<BacktestPayload>)=>{backtestCache.set(cacheKey,payload);setData(payload);setRunning(false);worker.terminate();workerRef.current=null;};
     worker.onerror=()=>{setFailed(true);setRunning(false);worker.terminate();workerRef.current=null;};
-    worker.postMessage({draws,settings:effectiveSettings,maxNumber,fromDate,toDate,trainingDraws,predictionCount:activePredictionCount,manualCombinations:activeManual});
+    worker.postMessage({draws,settings:effectiveSettings,maxNumber,fromDate,toDate,trainingDraws,predictionCount:activePredictionCount,manualResults:activeManual});
   };
-  const runManual=()=>{if(!parsedManual.valid){setManualError(true);return;}setManualError(false);run({manualCombinations:parsedManual.combinations});};
+  const runManual=()=>{if(!parsedManual.valid){setManualError(true);return;}setManualError(false);run({manualResults:parsedManual.combinations});};
   const tableRows=useMemo<BacktestTableRow[]>(()=>data?.result.rows.flatMap(row=>row.predictions.map((prediction,index)=>({rank:index+1,combination:prediction.numbers.map(pad).join("-"),count:prediction.count,rate:prediction.rate,sum:prediction.total,root:prediction.digitalRoot,insideOutside:`${prediction.insideCount}/${prediction.outsideCount}`,evenOdd:`${prediction.evenCount}/${prediction.oddCount}`,single:prediction.singleScore,pair:prediction.pairScore,triple:prediction.tripleScore,structure:prediction.structureScore,totalScore:prediction.totalScore,matches:prediction.matches,actual:row.actual,evaluation:t(prediction.matches>=3?"pages.goodResult":"pages.referenceOnly")})))??[],[data,t]);
   const resultColumns=useMemo<ColumnDef<BacktestTableRow>[]>(()=>[
-    {accessorKey:"combination",header:resultMode==="manual"?t("pages.manualSets",{count:resultCount}):t("pages.proposedSets",{count:resultCount}),cell:info=><span className="backtest-combination"><b>#{info.row.original.rank}</b>{info.getValue<string>()}</span>},
+    {accessorKey:"combination",header:t("pages.proposedSets",{count:resultCount}),cell:info=><span className="backtest-combination"><b>#{info.row.original.rank}</b>{info.getValue<string>()}</span>},
     {accessorKey:"count",header:t("common.count")},{id:"rate",accessorFn:row=>row.rate*100,header:t("pages.rate"),cell:info=>`${info.getValue<number>().toFixed(2)}%`},{accessorKey:"sum",header:t("pages.sum")},{accessorKey:"root",header:t("pages.root")},
     {accessorKey:"evenOdd",header:t("common.evenOdd")},{accessorKey:"insideOutside",header:t("common.insideOutside")},
     {accessorKey:"single",header:t("pages.single"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"pair",header:t("common.pair"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"triple",header:t("common.triple"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"structure",header:t("prediction.structure"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"totalScore",header:t("pages.totalScore"),cell:info=>info.getValue<number>().toFixed(2)},
     {accessorKey:"matches",header:t("pages.matchCount"),cell:info=><strong className="backtest-match">{info.getValue<number>()}/6</strong>},
     {id:"actual",accessorFn:row=>row.actual.map(pad).join("-"),header:t("pages.actualResult"),cell:info=><div className="backtest-actual">{info.row.original.actual.map((number,index)=><NumberBall key={number} number={number} index={index} small/>)}</div>},
     {accessorKey:"evaluation",header:t("pages.evaluation"),cell:info=><span className={`backtest-grade grade-${Math.min(info.row.original.matches,3)}`}>{info.getValue<string>()}</span>},
-  ],[resultCount,resultMode,t]);
+  ],[resultCount,t]);
   return <div className="backtest-page">
     <PageTitle title={t("pages.backtestTitle")} subtitle={t("pages.backtestSubtitle")}/>
     <Card className="backtest-setup">
@@ -182,7 +180,7 @@ export function BacktestPage(){
       </div>
       <div className="backtest-note"><Info size={15}/><span>{t("pages.backtestNote")}</span></div>
       <div className="manual-test"><label><span>{t("pages.manualInput")}</span><input value={manualInput} onChange={event=>{setManualInput(event.target.value);setManualError(false);}} className={manualError?"invalid":""} aria-invalid={manualError} aria-describedby="manual-test-help" placeholder="093653, 102301"/></label><Button className="secondary" onClick={runManual} disabled={running}><Play size={15}/>{t("pages.runTest")}</Button><small id="manual-test-help">{t("pages.manualInputHint")}</small>{manualError&&<><div className="manual-invalid-values">{parsedManual.entries.map((entry,entryIndex)=>/^\d{6}$/.test(entry)?<span className="manual-entry" key={`${entry}-${entryIndex}`}>{(entry.match(/\d{2}/g)??[]).map((chunk,chunkIndex)=><b className={parsedManual.issues.some(issue=>issue.entryIndex===entryIndex&&(issue.chunkIndex===chunkIndex||issue.chunkIndex===undefined))?"invalid":""} key={chunkIndex}>{chunk}</b>)}</span>:<b className="invalid" key={`${entry}-${entryIndex}`}>{entry}</b>)}</div><p className="manual-error" role="alert">{t("pages.manualInputError",{max:maxNumber})}</p></>}</div>
-      <Button onClick={()=>run({manualCombinations:null})} disabled={running}>{running?<LoaderCircle className="spin" size={15}/>:<Play size={15}/>} {running?t("pages.backtestLoading"):t("pages.runBacktest")}</Button>
+      <Button onClick={()=>run({manualResults:null})} disabled={running}>{running?<LoaderCircle className="spin" size={15}/>:<Play size={15}/>} {running?t("pages.backtestLoading"):t("pages.runBacktest")}</Button>
     </Card>
     {failed&&<Card className="backtest-loading" role="alert">{t("pages.backtestError")}</Card>}
     {!data&&!failed&&!running&&<Card className="backtest-loading">{t("pages.backtestReady")}</Card>}
