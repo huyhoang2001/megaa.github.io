@@ -1,6 +1,6 @@
 import { format, parseISO } from "date-fns";
 import { enUS, vi } from "date-fns/locale";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
 import { Info, Maximize2, X } from "lucide-react";
@@ -89,11 +89,11 @@ function DistributionPie({ title, info, data,total }: { title: string; info:stri
 type ScoreTimeline = ReturnType<typeof calculateScoreTimeline>;
 type ScoreValueKey = "single"|"pair"|"triple"|"structure"|"total";
 
-function ScoreHistoryChart({title,data,valueKey,color}:{title:string;data:ScoreTimeline;valueKey:ScoreValueKey;color:string}){
+function ScoreHistoryChart({title,data,valueKey,color,loading}:{title:string;data:ScoreTimeline;valueKey:ScoreValueKey;color:string;loading:boolean}){
   const {language,t}=useI18n();
   const dateLocale=language==="vi"?vi:enUS;
   const maKey=`${valueKey}Ma20` as keyof ScoreTimeline[number];
-  return <ChartCard title={title} subtitle={t("dashboard.scoreHistorySubtitle")}><ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{left:10,right:12,top:8,bottom:24}}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date" minTickGap={28} tickFormatter={value=>format(parseISO(String(value)),"MM/yyyy",{locale:dateLocale})} label={xAxisLabel(t("common.drawDate"))}/><YAxis width={45} domain={[0,100]} label={yAxisLabel(t("common.value"))}/><Tooltip labelFormatter={value=>format(parseISO(String(value)),"dd/MM/yyyy",{locale:dateLocale})} formatter={(value,name)=>[Number(value).toFixed(2),name]}/><Legend iconType="line" iconSize={10} wrapperStyle={{fontSize:9}}/><Line type="monotone" dataKey={valueKey} name={t("common.value")} stroke={color} strokeWidth={2} dot={false} activeDot={{r:4,strokeWidth:2,fill:"var(--chart-surface)"}}/><Line type="monotone" dataKey={maKey} name="MA20" stroke="#ef5b3f" strokeWidth={2.2} strokeDasharray="7 5" dot={false}/></LineChart></ResponsiveContainer></ChartCard>;
+  return <ChartCard title={title} subtitle={t("dashboard.scoreHistorySubtitle")}>{loading?<div className="empty-state">{t("dashboard.scoreHistoryLoading")}</div>:<ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{left:10,right:12,top:8,bottom:24}}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date" minTickGap={28} tickFormatter={value=>format(parseISO(String(value)),"MM/yyyy",{locale:dateLocale})} label={xAxisLabel(t("common.drawDate"))}/><YAxis width={45} domain={[0,100]} label={yAxisLabel(t("common.value"))}/><Tooltip labelFormatter={value=>format(parseISO(String(value)),"dd/MM/yyyy",{locale:dateLocale})} formatter={(value,name)=>[Number(value).toFixed(2),name]}/><Legend iconType="line" iconSize={10} wrapperStyle={{fontSize:9}}/><Line type="monotone" dataKey={valueKey} name={t("common.value")} stroke={color} strokeWidth={2} dot={false} activeDot={{r:4,strokeWidth:2,fill:"var(--chart-surface)"}}/><Line type="monotone" dataKey={maKey} name="MA20" stroke="#ef5b3f" strokeWidth={2.2} strokeDasharray="7 5" dot={false}/></LineChart></ResponsiveContainer>}</ChartCard>;
 }
 
 export default function Dashboard() {
@@ -116,7 +116,16 @@ export default function Dashboard() {
   const insideNumbers=Array.from(INSIDE_SET).filter(number=>number<=gameConfig.maxNumber).map(pad).join(", ");
   const visibleDrawIds=new Set(filtered.map(draw=>draw.id));
   const timeline = calculateOccurrenceTimeline(draws).filter(point=>visibleDrawIds.has(point.id));
-  const scoreTimeline=useMemo(()=>calculateScoreTimeline(filtered,singles,pairs,triples,effectiveSettings),[filtered,singles,pairs,triples,effectiveSettings]);
+  const [scoreTimeline,setScoreTimeline]=useState<ScoreTimeline>([]);
+  const [scoreTimelineLoading,setScoreTimelineLoading]=useState(true);
+  useEffect(()=>{
+    const worker=new Worker(new URL("../scoreTimeline.worker.ts",import.meta.url),{type:"module"});
+    setScoreTimelineLoading(true);
+    worker.onmessage=({data}:MessageEvent<ScoreTimeline>)=>{setScoreTimeline(data);setScoreTimelineLoading(false);worker.terminate();};
+    worker.onerror=()=>{setScoreTimeline([]);setScoreTimelineLoading(false);worker.terminate();};
+    worker.postMessage({draws,targets:filtered,settings:effectiveSettings,maxNumber:gameConfig.maxNumber});
+    return()=>worker.terminate();
+  },[draws,filtered,effectiveSettings,gameConfig.maxNumber]);
   const scoreCharts:[string,ScoreValueKey,string][]=[
     [t("dashboard.singleScoreHistory"),"single","#2f7fc1"],
     [t("dashboard.pairScoreHistory"),"pair","#e9822a"],
@@ -170,7 +179,7 @@ export default function Dashboard() {
     </section>
 
     <section className="chart-grid score-history-grid" aria-label={t("dashboard.scoreHistoryGroup")}>
-      {scoreCharts.map(([title,valueKey,color])=><ScoreHistoryChart key={valueKey} title={title} data={scoreTimeline} valueKey={valueKey} color={color}/>)}
+      {scoreCharts.map(([title,valueKey,color])=><ScoreHistoryChart key={valueKey} title={title} data={scoreTimeline} valueKey={valueKey} color={color} loading={scoreTimelineLoading}/>)}
     </section>
 
     {analysisView==="Combinations"&&<Card className="view-note"><b>{t("dashboard.combinationView")}</b><span>{t("dashboard.combinationViewNote")}</span></Card>}
