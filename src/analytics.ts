@@ -249,20 +249,16 @@ export function scoreCandidateCombinations(numberSets:number[][],singles:SingleN
   });
 }
 
-export function calculateScoreTimeline(draws:Draw[],targets:Draw[],settings:AnalysisSettings,maxNumber=45,trainingDraws=50){
+export function calculateScoreTimeline(draws:Draw[],settings:AnalysisSettings,maxNumber=45){
   const ordered=[...draws].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
-  const targetIds=new Set(targets.map(draw=>draw.id));
-  const targetIndexes=ordered.flatMap((draw,index)=>targetIds.has(draw.id)?[index]:[]);
-  if(!targetIndexes.length)return [];
-  const start=Math.max(0,targetIndexes[0]-19);
-  const end=targetIndexes.at(-1)!;
-  const points:{id:string;date:string;single:number;pair:number;triple:number;structure:number;total:number}[]=[];
-  for(let index=start;index<=end;index++){
-    const draw=ordered[index];
-    const history=ordered.slice(Math.max(0,index-trainingDraws),index);
-    const [score]=scoreCandidateCombinations([draw.numbers],calculateSingles(history,settings,maxNumber),calculatePairs(history,maxNumber),calculateTriples(history,maxNumber),settings,history.slice(-30));
-    points.push({id:draw.id,date:draw.date,single:round2(score.singleScore),pair:round2(score.pairScore),triple:round2(score.tripleScore),structure:round2(score.structureScore),total:round2(score.totalScore)});
-  }
+  if(!ordered.length)return [];
+  const singles=calculateSingles(ordered,settings,maxNumber);
+  const pairs=calculatePairs(ordered,maxNumber);
+  const triples=calculateTriples(ordered,maxNumber);
+  const points=ordered.map(draw=>{
+    const [score]=scoreCandidateCombinations([draw.numbers],singles,pairs,triples,settings,ordered.filter(item=>item.id!==draw.id));
+    return {id:draw.id,date:draw.date,single:round2(score.singleScore),pair:round2(score.pairScore),triple:round2(score.tripleScore),structure:round2(score.structureScore),total:round2(score.totalScore)};
+  });
   const movingAverage=(key:"single"|"pair"|"triple"|"structure"|"total",index:number)=>{
     const window=points.slice(Math.max(0,index-19),index+1);
     return round2(mean(window.map(point=>point[key])));
@@ -274,7 +270,7 @@ export function calculateScoreTimeline(draws:Draw[],targets:Draw[],settings:Anal
     tripleMa20:movingAverage("triple",index),
     structureMa20:movingAverage("structure",index),
     totalMa20:movingAverage("total",index),
-  })).filter(point=>targetIds.has(point.id));
+  }));
 }
 
 export function generateCandidates(singles: SingleNumberStats[], pairs: PairStats[], triples: TripleStats[], settings: AnalysisSettings, history:Draw[]=[]): CandidateCombination[] {

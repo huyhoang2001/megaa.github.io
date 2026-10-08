@@ -59,17 +59,17 @@ describe("analytics", () => {
     expect(timeline.at(-1)?.ma20).toBe(round2(timeline.slice(-20).reduce((sum,item)=>sum+item.historicalFrequency,0)/20));
   });
   it("builds all five score timelines with a 20-period moving average",()=>{
-    const timeline=calculateScoreTimeline(draws,draws,DEFAULT_SETTINGS);
+    const timeline=calculateScoreTimeline(draws,DEFAULT_SETTINGS);
     expect(timeline).toHaveLength(draws.length);
     expect(timeline.every(point=>[point.single,point.pair,point.triple,point.structure,point.total,point.singleMa20,point.pairMa20,point.tripleMa20,point.structureMa20,point.totalMa20].every(Number.isFinite))).toBe(true);
     expect(timeline.at(-1)?.singleMa20).toBe(round2(timeline.reduce((sum,point)=>sum+point.single,0)/timeline.length));
   });
-  it("scores each historical draw from its preceding 50 draws",()=>{
-    const real=history.draws as Draw[];
-    const target=real.at(-1)!;
-    const [point]=calculateScoreTimeline(real,[target],DEFAULT_SETTINGS);
-    expect(target).toMatchObject({date:"2026-10-07",numbers:[10,14,36,37,41,43]});
-    expect(point).toMatchObject({single:50.28,pair:1.57,triple:.31,structure:85,total:46.68});
+  it("recalculates every score point from the selected period",()=>{
+    const period=draws.slice(-6);
+    const timeline=calculateScoreTimeline(period,DEFAULT_SETTINGS);
+    expect(timeline.map(point=>point.id)).toEqual(period.map(draw=>draw.id));
+    expect(timeline).toHaveLength(period.length);
+    expect(timeline.every(point=>Number.isFinite(point.total)&&Number.isFinite(point.totalMa20))).toBe(true);
   });
   it("groups draw density by calendar month", () => {
     const real=history.draws as Draw[];
