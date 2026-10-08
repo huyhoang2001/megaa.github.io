@@ -136,7 +136,7 @@ describe("analytics", () => {
     const result=backtestRange(draws,DEFAULT_SETTINGS,{...options,manualResults:[actual]});
     expect(result.rows).toHaveLength(1);
     expect(result.rows[0].actual).toEqual(actual);
-    expect(result.rows[0].predictions).toHaveLength(2);
+    expect(result.rows[0].predictions).toHaveLength(1);
     expect(result.rows[0].predictions.map(prediction=>prediction.numbers)).toEqual([actual]);
     expect(result.rows[0].predictions[0].matches).toBe(6);
   });
