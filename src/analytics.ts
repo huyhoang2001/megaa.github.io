@@ -255,7 +255,7 @@ export function calculateScoreTimeline(draws:Draw[],settings:AnalysisSettings,ma
   const targets=targetDrawIds?new Set(targetDrawIds):undefined;
   const points=ordered.flatMap((draw,index)=>{
     if(targets&&!targets.has(draw.id))return [];
-    const history=ordered.slice(0,index);
+    const history=ordered.slice(Math.max(0,index-30),index);
     const singles=calculateSingles(history,settings,maxNumber);
     const pairs=calculatePairs(history,maxNumber);
     const triples=calculateTriples(history,maxNumber);
