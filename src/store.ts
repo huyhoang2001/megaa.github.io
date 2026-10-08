@@ -48,10 +48,11 @@ export const mergeBundledDraws=(stored:Draw[]|undefined,bundledDraws:Draw[]):Dra
   return [...official,...stored.filter(draw=>!bundledIds.has(draw.id))].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
 };
 export const mergeBundledPowerDraws=(stored?:Draw[]):Draw[]=>mergeBundledDraws(stored,defaultPowerDraws);
-const mergeSettings=(settings?:Partial<AnalysisSettings>):AnalysisSettings=>({
+export const mergeSettings=(settings?:Partial<AnalysisSettings>):AnalysisSettings=>({
   ...defaultSettings,...settings,
   singleWeights:{...defaultSettings.singleWeights,...settings?.singleWeights},
   combinationWeights:{...defaultSettings.combinationWeights,...settings?.combinationWeights},
+  allowedParity:[...defaultSettings.allowedParity],
   allowedDigitalRoots:settings?.allowedDigitalRoots&&previousDefaultRoots.some(roots=>settings.allowedDigitalRoots!.length===roots.length&&roots.every(root=>settings.allowedDigitalRoots!.includes(root)))?defaultSettings.allowedDigitalRoots:[...(settings?.allowedDigitalRoots??defaultSettings.allowedDigitalRoots)],
   consensusWeights:{...defaultSettings.consensusWeights,...settings?.consensusWeights},
   comboWeightsV2:{...defaultSettings.comboWeightsV2,...settings?.comboWeightsV2},

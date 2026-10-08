@@ -1,9 +1,12 @@
 import { describe,expect,it } from "vitest";
 import powerHistory from "./data/power655-history.json";
 import type { Draw } from "./domain";
-import { mergeBundledDraws, mergeBundledPowerDraws } from "./store";
+import { mergeBundledDraws, mergeBundledPowerDraws, mergeSettings } from "./store";
 
 describe("Power history persistence migration",()=>{
+  it("keeps suggested parity limited to balanced 3/3, 4/2, or 2/4",()=>{
+    expect(mergeSettings({allowedParity:["6/0","5/1","1/5","0/6"]}).allowedParity).toEqual(["3/3","4/2","2/4"]);
+  });
   it("restores official jackpot values and missing draws while preserving edits",()=>{
     const latest=powerHistory.draws.at(-1) as Draw;
     const stored:Draw[]=[

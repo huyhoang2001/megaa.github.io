@@ -321,9 +321,14 @@ export function generateCandidates(singles: SingleNumberStats[], pairs: PairStat
   const candidates=scoreCandidateCombinations(combinations(pool,6),singles,pairs,triples,settings,history).filter(x=>x.valid).sort((a,b)=>b.totalScore-a.totalScore);
   const rootsPresent=new Set(candidates.map(candidate=>candidate.digitalRoot));
   const missingRoots=settings.allowedDigitalRoots.filter(root=>!rootsPresent.has(root));
+  const parityPresent=new Set(candidates.map(candidate=>`${candidate.evenCount}/${candidate.oddCount}`));
+  const missingParity=settings.allowedParity.filter(parity=>!parityPresent.has(parity));
   const rootAlternatives:number[][]=[];
-  const alternativesByRoot=new Map(missingRoots.map(root=>[root,0]));
-  if(missingRoots.length){
+  const targetCounts=new Map<string,number>([
+    ...missingRoots.map(root=>[`root:${root}`,0] as [string,number]),
+    ...missingParity.map(parity=>[`parity:${parity}`,0] as [string,number]),
+  ]);
+  if(targetCounts.size){
     const maxNumber=singles.length||45;
     for(const source of candidates.slice(0,60)){
       for(let index=0;index<source.numbers.length;index++) for(let number=1;number<=maxNumber;number++){
@@ -332,16 +337,21 @@ export function generateCandidates(singles: SingleNumberStats[], pairs: PairStat
         numbers[index]=number;
         const total=numbers.reduce((sum,value)=>sum+value,0);
         const root=digitalRoot(total);
-        if(!alternativesByRoot.has(root)||(alternativesByRoot.get(root)??0)>=12)continue;
+        const rootKey=`root:${root}`;
+        if(!settings.allowedDigitalRoots.includes(root))continue;
         const even=numbers.filter(value=>value%2===0).length;
+        const parity=`${even}/${6-even}`;
+        const parityKey=`parity:${parity}`;
+        const targetKeys=[rootKey,parityKey].filter(key=>targetCounts.has(key)&&(targetCounts.get(key)??0)<12);
+        if(!targetKeys.length)continue;
         const inside=numbers.filter(value=>INSIDE_SET.has(value)).length;
-        if(total<settings.minTotal||!settings.allowedParity.includes(`${even}/${6-even}`)||!settings.allowedInsideOutside.includes(`${inside}/${6-inside}`))continue;
+        if(total<settings.minTotal||!settings.allowedParity.includes(parity)||!settings.allowedInsideOutside.includes(`${inside}/${6-inside}`))continue;
         const key=[...numbers].sort((a,b)=>a-b).join("-");
         if(rootAlternatives.some(item=>[...item].sort((a,b)=>a-b).join("-")===key))continue;
         rootAlternatives.push(numbers);
-        alternativesByRoot.set(root,(alternativesByRoot.get(root)??0)+1);
+        targetKeys.forEach(target=>targetCounts.set(target,(targetCounts.get(target)??0)+1));
       }
-      if(missingRoots.every(root=>(alternativesByRoot.get(root)??0)>=12))break;
+      if([...targetCounts.values()].every(count=>count>=12))break;
     }
   }
   const alternatives=rootAlternatives.length?scoreCandidateCombinations(rootAlternatives,singles,pairs,triples,settings,history).filter(candidate=>candidate.valid):[];
@@ -351,6 +361,10 @@ export function generateCandidates(singles: SingleNumberStats[], pairs: PairStat
   for(const root of settings.allowedDigitalRoots){
     const candidate=allCandidates.find(item=>item.digitalRoot===root&&selected.every(existing=>item.numbers.filter(n=>existing.numbers.includes(n)).length<=settings.maxCombinationOverlap));
     if(candidate)selected.push(candidate);
+  }
+  for(const parity of settings.allowedParity){
+    const candidate=allCandidates.find(item=>`${item.evenCount}/${item.oddCount}`===parity&&selected.every(existing=>item.numbers.filter(n=>existing.numbers.includes(n)).length<=settings.maxCombinationOverlap));
+    if(candidate&&!selected.includes(candidate))selected.push(candidate);
   }
   for (const candidate of allCandidates) {
     if(selected.includes(candidate))continue;

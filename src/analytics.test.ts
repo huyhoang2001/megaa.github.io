@@ -134,6 +134,8 @@ describe("analytics", () => {
     const candidates=generateCandidates(calculateSingles(real,DEFAULT_SETTINGS),calculatePairs(real),calculateTriples(real),DEFAULT_SETTINGS,real);
     expect(DEFAULT_SETTINGS.allowedDigitalRoots).toEqual([1,3,5,8]);
     expect(candidates.every(candidate=>[1,3,5,8].includes(candidate.digitalRoot))).toBe(true);
+    expect(candidates.every(candidate=>DEFAULT_SETTINGS.allowedParity.includes(`${candidate.evenCount}/${candidate.oddCount}`))).toBe(true);
+    expect(new Set(candidates.map(candidate=>`${candidate.evenCount}/${candidate.oddCount}`))).toEqual(new Set(DEFAULT_SETTINGS.allowedParity));
   });
   it("backtest isolates each target from future data", () => { const result=backtest(draws,DEFAULT_SETTINGS,2); expect(result.tests).toBe(2); expect(result.best).toBeLessThanOrEqual(6); });
   it("builds one Top N list from the selected training range",()=>{
