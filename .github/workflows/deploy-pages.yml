@@ -9,6 +9,7 @@ on:
       timezone: "Asia/Ho_Chi_Minh"
 
 permissions:
+  actions: write
   contents: write
   pages: write
   id-token: write
@@ -64,6 +65,27 @@ jobs:
 
       - name: Configure Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
+
+      - name: Remove previous Pages artifacts for this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          artifact_ids=$(curl --fail-with-body --silent --show-error \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/artifacts?per_page=100" \
+            | jq -r '.artifacts[] | select(.name == "github-pages") | .id')
+          while IFS= read -r artifact_id; do
+            [[ -z "$artifact_id" ]] && continue
+            curl --fail-with-body --silent --show-error --request DELETE \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}" \
+              --output /dev/null
+          done <<< "$artifact_ids"
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
