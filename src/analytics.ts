@@ -249,14 +249,17 @@ export function scoreCandidateCombinations(numberSets:number[][],singles:SingleN
   });
 }
 
-export function calculateScoreTimeline(draws:Draw[],settings:AnalysisSettings,maxNumber=45){
+export function calculateScoreTimeline(draws:Draw[],settings:AnalysisSettings,maxNumber=45,targetDrawIds?:string[]){
   const ordered=[...draws].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
   if(!ordered.length)return [];
-  const singles=calculateSingles(ordered,settings,maxNumber);
-  const pairs=calculatePairs(ordered,maxNumber);
-  const triples=calculateTriples(ordered,maxNumber);
-  const points=ordered.map(draw=>{
-    const [score]=scoreCandidateCombinations([draw.numbers],singles,pairs,triples,settings,ordered.filter(item=>item.id!==draw.id));
+  const targets=targetDrawIds?new Set(targetDrawIds):undefined;
+  const points=ordered.flatMap((draw,index)=>{
+    if(targets&&!targets.has(draw.id))return [];
+    const history=ordered.slice(0,index);
+    const singles=calculateSingles(history,settings,maxNumber);
+    const pairs=calculatePairs(history,maxNumber);
+    const triples=calculateTriples(history,maxNumber);
+    const [score]=scoreCandidateCombinations([draw.numbers],singles,pairs,triples,settings,history);
     return {id:draw.id,date:draw.date,single:round2(score.singleScore),pair:round2(score.pairScore),triple:round2(score.tripleScore),structure:round2(score.structureScore),total:round2(score.totalScore)};
   });
   const movingAverage=(key:"single"|"pair"|"triple"|"structure"|"total",index:number)=>{

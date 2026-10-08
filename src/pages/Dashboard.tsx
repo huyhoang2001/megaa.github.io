@@ -131,7 +131,7 @@ export default function Dashboard() {
     setScoreTimelineLoading(true);
     worker.onmessage=({data}:MessageEvent<ScoreTimeline>)=>{setScoreTimeline(data);setScoreTimelineLoading(false);worker.terminate();};
     worker.onerror=()=>{setScoreTimeline([]);setScoreTimelineLoading(false);worker.terminate();};
-    worker.postMessage({draws:filtered,settings:effectiveSettings,maxNumber:gameConfig.maxNumber});
+    worker.postMessage({draws,targetDrawIds:filtered.map(draw=>draw.id),settings:effectiveSettings,maxNumber:gameConfig.maxNumber});
     return()=>worker.terminate();
   },[draws,filtered,effectiveSettings,gameConfig.maxNumber]);
   const scoreCharts:[string,ScoreValueKey,string][]=[
