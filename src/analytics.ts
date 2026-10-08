@@ -267,7 +267,8 @@ export function scoreCandidateCombinations(numberSets:number[][],singles:SingleN
       const item=singleMap.get(n);
       return sum+(item?(item.chance+item.consensus)/2:50);
     }, 0) / 6;
-    const structureRaw = ({8:30,5:25,3:20,1:15} as Record<number, number>)[root] ?? 0;
+    // Uniform draws provide no evidence for preferring any particular digital root.
+    const structureRaw = 0;
     const parity = evenCount === 3 ? 30 : evenCount === 2 || evenCount === 4 ? 25 : 0;
     const distribution = insideCount === 4 ? 30 : insideCount === 3 ? 25 : 0;
     const structureScore = structureRaw + parity + distribution + (total >= settings.minTotal ? 10 : 0);
@@ -318,12 +319,45 @@ export function generateCandidates(singles: SingleNumberStats[], pairs: PairStat
     ...ranked.filter(x => !x.inside).slice(0, settings.candidatePoolSize - insideTarget),
   ].map(x => x.number).sort((a, b) => a - b);
   const candidates=scoreCandidateCombinations(combinations(pool,6),singles,pairs,triples,settings,history).filter(x=>x.valid).sort((a,b)=>b.totalScore-a.totalScore);
+  const rootsPresent=new Set(candidates.map(candidate=>candidate.digitalRoot));
+  const missingRoots=settings.allowedDigitalRoots.filter(root=>!rootsPresent.has(root));
+  const rootAlternatives:number[][]=[];
+  const alternativesByRoot=new Map(missingRoots.map(root=>[root,0]));
+  if(missingRoots.length){
+    const maxNumber=singles.length||45;
+    for(const source of candidates.slice(0,60)){
+      for(let index=0;index<source.numbers.length;index++) for(let number=1;number<=maxNumber;number++){
+        if(source.numbers.includes(number))continue;
+        const numbers=[...source.numbers];
+        numbers[index]=number;
+        const total=numbers.reduce((sum,value)=>sum+value,0);
+        const root=digitalRoot(total);
+        if(!alternativesByRoot.has(root)||(alternativesByRoot.get(root)??0)>=12)continue;
+        const even=numbers.filter(value=>value%2===0).length;
+        const inside=numbers.filter(value=>INSIDE_SET.has(value)).length;
+        if(total<settings.minTotal||!settings.allowedParity.includes(`${even}/${6-even}`)||!settings.allowedInsideOutside.includes(`${inside}/${6-inside}`))continue;
+        const key=[...numbers].sort((a,b)=>a-b).join("-");
+        if(rootAlternatives.some(item=>[...item].sort((a,b)=>a-b).join("-")===key))continue;
+        rootAlternatives.push(numbers);
+        alternativesByRoot.set(root,(alternativesByRoot.get(root)??0)+1);
+      }
+      if(missingRoots.every(root=>(alternativesByRoot.get(root)??0)>=12))break;
+    }
+  }
+  const alternatives=rootAlternatives.length?scoreCandidateCombinations(rootAlternatives,singles,pairs,triples,settings,history).filter(candidate=>candidate.valid):[];
+  const allCandidates=[...candidates,...alternatives].sort((a,b)=>b.totalScore-a.totalScore);
   const selected: CandidateCombination[] = [];
-  for (const candidate of candidates) {
+  // Seed the list with the strongest compatible candidate from each allowed root.
+  for(const root of settings.allowedDigitalRoots){
+    const candidate=allCandidates.find(item=>item.digitalRoot===root&&selected.every(existing=>item.numbers.filter(n=>existing.numbers.includes(n)).length<=settings.maxCombinationOverlap));
+    if(candidate)selected.push(candidate);
+  }
+  for (const candidate of allCandidates) {
+    if(selected.includes(candidate))continue;
     if (selected.every(existing => candidate.numbers.filter(n => existing.numbers.includes(n)).length <= settings.maxCombinationOverlap)) selected.push(candidate);
     if (selected.length >= Math.max(20, settings.topCombinationCount)) break;
   }
-  return selected.map((x, i) => ({ ...x, rank: i + 1 }));
+  return selected.sort((a,b)=>b.totalScore-a.totalScore).map((x, i) => ({ ...x, rank: i + 1 }));
 }
 
 export function backtest(draws: Draw[], settings: AnalysisSettings, count = 12,maxNumber=45) {

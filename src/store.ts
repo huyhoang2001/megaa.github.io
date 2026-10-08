@@ -29,6 +29,7 @@ type State = {
 const defaultDraws = history.draws as Draw[];
 const defaultPowerDraws = powerHistory.draws as Draw[];
 const defaultSettings = settingsJson as AnalysisSettings;
+const previousDefaultRoots=[[8,5,3,1],[1,2,3,4,5,6,7,8,9]];
 export const mergeBundledDraws=(stored:Draw[]|undefined,bundledDraws:Draw[]):Draw[]=>{
   if(!stored?.length)return bundledDraws;
   const storedById=new Map(stored.map(draw=>[draw.id,draw]));
@@ -51,6 +52,7 @@ const mergeSettings=(settings?:Partial<AnalysisSettings>):AnalysisSettings=>({
   ...defaultSettings,...settings,
   singleWeights:{...defaultSettings.singleWeights,...settings?.singleWeights},
   combinationWeights:{...defaultSettings.combinationWeights,...settings?.combinationWeights},
+  allowedDigitalRoots:settings?.allowedDigitalRoots&&previousDefaultRoots.some(roots=>settings.allowedDigitalRoots!.length===roots.length&&roots.every(root=>settings.allowedDigitalRoots!.includes(root)))?defaultSettings.allowedDigitalRoots:[...(settings?.allowedDigitalRoots??defaultSettings.allowedDigitalRoots)],
   consensusWeights:{...defaultSettings.consensusWeights,...settings?.consensusWeights},
   comboWeightsV2:{...defaultSettings.comboWeightsV2,...settings?.comboWeightsV2},
 });

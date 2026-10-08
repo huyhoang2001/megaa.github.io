@@ -93,7 +93,7 @@ export const INSIDE_SET = new Set([2,3,4,5,6,7,8,9,10,11,13,14,15,16,18,21,22,23
 export const DEFAULT_SETTINGS: AnalysisSettings = {
   candidatePoolSize: 14,
   minTotal: 55,
-  allowedDigitalRoots: [8, 5, 3, 1],
+  allowedDigitalRoots: [1, 3, 5, 8],
   allowedParity: ["3/3", "4/2", "2/4"],
   allowedInsideOutside: ["4/2", "3/3"],
   singleWeights: { frequency: 45, gap: 25, trend: 20, inside: 10 },

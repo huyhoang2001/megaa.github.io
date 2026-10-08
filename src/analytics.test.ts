@@ -129,6 +129,12 @@ describe("analytics", () => {
   });
   it("generates valid, scored, diverse candidates", () => { const singles=calculateSingles(draws,DEFAULT_SETTINGS); const pairs=calculatePairs(draws); const triples=calculateTriples(draws); const candidates=generateCandidates(singles,pairs,triples,DEFAULT_SETTINGS); expect(candidates.every(c=>c.valid&&c.numbers.length===6&&Number.isFinite(c.totalScore))).toBe(true); });
   it("keeps a viable structure-aware candidate pool with real history", () => { const real=history.draws as Draw[]; const singles=calculateSingles(real,DEFAULT_SETTINGS); const pairs=calculatePairs(real); const triples=calculateTriples(real); expect(generateCandidates(singles,pairs,triples,DEFAULT_SETTINGS).length).toBeGreaterThan(0); });
+  it("filters suggested combinations to digital roots 1, 3, 5, and 8 by default",()=>{
+    const real=history.draws as Draw[];
+    const candidates=generateCandidates(calculateSingles(real,DEFAULT_SETTINGS),calculatePairs(real),calculateTriples(real),DEFAULT_SETTINGS,real);
+    expect(DEFAULT_SETTINGS.allowedDigitalRoots).toEqual([1,3,5,8]);
+    expect(candidates.every(candidate=>[1,3,5,8].includes(candidate.digitalRoot))).toBe(true);
+  });
   it("backtest isolates each target from future data", () => { const result=backtest(draws,DEFAULT_SETTINGS,2); expect(result.tests).toBe(2); expect(result.best).toBeLessThanOrEqual(6); });
   it("builds one Top N list from the selected training range",()=>{
     const result=backtestRange(draws,{...DEFAULT_SETTINGS,candidatePoolSize:10},{fromDate:"2026-01-01",toDate:"2026-03-19",trainingDraws:10,predictionCount:2});
