@@ -33,11 +33,12 @@ type DataTableProps<TData>={
   labels:DataTableLabels;
   maxRows?:number;
   onReset?:()=>void;
+  hideRowCount?:boolean;
 };
 
 const excelFilter:FilterFn<unknown>=(row,columnId,value)=>matchesColumnFilter(row.getValue(columnId),String(value??""));
 
-export default function DataTable<TData>({data,columns,labels,maxRows,onReset}:DataTableProps<TData>){
+export default function DataTable<TData>({data,columns,labels,maxRows,onReset,hideRowCount=false}:DataTableProps<TData>){
   const [sorting,setSorting]=useState<SortingState>([]);
   const [columnFilters,setColumnFilters]=useState<ColumnFiltersState>([]);
   const [activeColumnId,setActiveColumnId]=useState<string|null>(null);
@@ -63,7 +64,7 @@ export default function DataTable<TData>({data,columns,labels,maxRows,onReset}:D
   const reset=()=>{table.resetColumnFilters(true);table.resetSorting();setActiveColumnId(null);onReset?.();};
   return <Card className="table-card data-table-card">
     <div className="data-table-toolbar">
-      <span aria-live="polite">{labels.rowsShown.replace("{shown}",String(visibleRows.length)).replace("{total}",String(filteredRows.length))}</span>
+      {!hideRowCount&&<span aria-live="polite">{labels.rowsShown.replace("{shown}",String(visibleRows.length)).replace("{total}",String(filteredRows.length))}</span>}
       <button type="button" className="table-reset" onClick={reset} disabled={!hasChanges&&!onReset}><RotateCcw size={14}/>{labels.resetFilters}</button>
     </div>
     {activeColumn&&<div className="column-filter-panel">

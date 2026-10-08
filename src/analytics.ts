@@ -307,7 +307,7 @@ export function backtest(draws: Draw[], settings: AnalysisSettings, count = 12,m
   return { distribution, average: tests ? totalMatches / tests : 0, best, tests };
 }
 
-export type BacktestRangeOptions={fromDate:string;toDate:string;trainingDraws:number;predictionCount:number;maxNumber?:number;manualCombinations?:number[][]};
+export type BacktestRangeOptions={fromDate:string;toDate:string;trainingDraws:number;predictionCount:number;maxNumber?:number;manualResults?:number[][]};
 export type BacktestPrediction=CandidateCombination&{count:number;rate:number;matches:number};
 export type BacktestResultRow={targetId:string;date:string;predictions:BacktestPrediction[];actual:number[];bestMatches:number};
 
@@ -323,11 +323,11 @@ export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:Bac
   const trainingDraws=Math.max(10,options.trainingDraws);
   const predictionCount=Math.max(1,options.predictionCount);
   const maxNumber=options.maxNumber??45;
-  const evaluate=(history:Draw[],actual:number[],targetId:string,date:string,manualCombinations?:number[][])=>{
+  const evaluate=(history:Draw[],actual:number[],targetId:string,date:string,manualProposedSets?:number[][])=>{
     const singles=calculateSingles(history,settings,maxNumber);
     const pairs=calculatePairs(history,maxNumber);
     const triples=calculateTriples(history,maxNumber);
-    const candidates=manualCombinations?.length?scoreCandidateCombinations(manualCombinations,singles,pairs,triples,settings,history):generateCandidates(singles,pairs,triples,settings,history).slice(0,predictionCount);
+    const candidates=manualProposedSets?.length?scoreCandidateCombinations(manualProposedSets,singles,pairs,triples,settings,history):generateCandidates(singles,pairs,triples,settings,history).slice(0,predictionCount);
     const predictions:BacktestPrediction[]=candidates.map(candidate=>{
       const key=candidate.numbers.map(pad).join("-");
       const count=history.filter(draw=>draw.numbers.map(pad).join("-")===key).length;
@@ -340,9 +340,13 @@ export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:Bac
     rows.push({targetId,date,predictions,actual,bestMatches});
   };
   const range=draws.filter(draw=>draw.date>=options.fromDate&&draw.date<=options.toDate);
-  const target=range.at(-1);
-  const history=range.slice(0,-1).slice(-trainingDraws);
-  if(target&&history.length===trainingDraws)evaluate(history,target.numbers,target.id,target.date,options.manualCombinations);
+  const manualResults=options.manualResults;
+  const targets=manualResults?.length?range.slice(-manualResults.length):range.slice(-1);
+  targets.forEach((target,index)=>{
+    const targetIndex=range.indexOf(target);
+    const history=range.slice(0,targetIndex).slice(-trainingDraws);
+    if(history.length===trainingDraws)evaluate(history,manualResults?.[index]??target.numbers,target.id,target.date,manualResults);
+  });
   return {distribution,average:rows.length?totalMatches/rows.length:0,best,tests:rows.length,rows};
 }
 

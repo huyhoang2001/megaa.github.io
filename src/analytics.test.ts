@@ -130,14 +130,14 @@ describe("analytics", () => {
     expect(result.rows.flatMap(row=>row.predictions).every(prediction=>Number.isFinite(prediction.tripleScore)&&prediction.insideCount+prediction.outsideCount===6&&prediction.evenCount+prediction.oddCount===6)).toBe(true);
     expect(result.distribution.reduce((sum,count)=>sum+count,0)).toBe(result.tests);
   });
-  it("scores user-entered proposed sets against the final target draw",()=>{
-    const proposed=[[1,2,3,4,7,45],[1,5,31,32,33,34]];
+  it("uses user-entered results as actuals and generates proposed sets",()=>{
+    const actual=[1,2,3,4,7,45];
     const options={fromDate:"2026-01-01",toDate:"2026-03-19",trainingDraws:10,predictionCount:2};
-    const result=backtestRange(draws,DEFAULT_SETTINGS,{...options,manualCombinations:proposed});
+    const result=backtestRange(draws,DEFAULT_SETTINGS,{...options,manualResults:[actual]});
     expect(result.rows).toHaveLength(1);
-    expect(result.rows[0].actual).toEqual(draws.at(-1)?.numbers);
+    expect(result.rows[0].actual).toEqual(actual);
     expect(result.rows[0].predictions).toHaveLength(2);
-    expect(result.rows[0].predictions.map(prediction=>prediction.numbers)).toEqual(proposed);
+    expect(result.rows[0].predictions.map(prediction=>prediction.numbers)).toEqual([actual]);
     expect(result.rows[0].predictions[0].matches).toBe(6);
   });
   it("enables the full training tier supported by the selected range",()=>{
