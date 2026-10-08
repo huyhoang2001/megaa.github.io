@@ -89,13 +89,19 @@ function DistributionPie({ title, info, data,total }: { title: string; info:stri
 type ScoreTimeline = ReturnType<typeof calculateScoreTimeline>;
 type ScoreValueKey = "single"|"pair"|"triple"|"structure"|"total";
 
+export function scoreAxisMaximum(values:number[],padding:number){
+  return Math.ceil(Math.max(0,...values.filter(Number.isFinite))+padding);
+}
+
 function ScoreHistoryChart({title,data,valueKey,color,loading}:{title:string;data:ScoreTimeline;valueKey:ScoreValueKey;color:string;loading:boolean}){
   const {language,t}=useI18n();
   const dateLocale=language==="vi"?vi:enUS;
   const maKey=`${valueKey}Ma20` as keyof ScoreTimeline[number];
-  const domain:[number,number]=valueKey==="pair"?[0,10]:valueKey==="triple"?[0,1]:[0,100];
-  const ticks=valueKey==="pair"?[0,2,4,6,8,10]:valueKey==="triple"?[0,.2,.4,.6,.8,1]:undefined;
-  return <ChartCard title={title} subtitle={t("dashboard.scoreHistorySubtitle")}>{loading?<div className="empty-state">{t("dashboard.scoreHistoryLoading")}</div>:<ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{left:10,right:12,top:8,bottom:24}}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date" minTickGap={28} tickFormatter={value=>format(parseISO(String(value)),"MM/yyyy",{locale:dateLocale})} label={xAxisLabel(t("common.drawDate"))}/><YAxis width={45} domain={domain} ticks={ticks} allowDataOverflow={valueKey==="pair"||valueKey==="triple"} label={yAxisLabel(t("common.value"))}/><Tooltip labelFormatter={value=>format(parseISO(String(value)),"dd/MM/yyyy",{locale:dateLocale})} formatter={(value,name)=>[Number(value).toFixed(2),name]}/><Legend iconType="line" iconSize={10} wrapperStyle={{fontSize:9}}/><Line type="monotone" dataKey={valueKey} name={t("common.value")} stroke={color} strokeWidth={2} dot={false} activeDot={{r:4,strokeWidth:2,fill:"var(--chart-surface)"}}/><Line type="monotone" dataKey={maKey} name="MA20" stroke="#ef5b3f" strokeWidth={2.2} strokeDasharray="7 5" dot={false}/></LineChart></ResponsiveContainer>}</ChartCard>;
+  const hasDynamicScale=valueKey==="pair"||valueKey==="triple";
+  const padding=valueKey==="pair"?10:1;
+  const maximum=scoreAxisMaximum(data.flatMap(point=>[Number(point[valueKey]),Number(point[maKey])]),padding);
+  const domain:[number,number]=hasDynamicScale?[0,maximum]:[0,100];
+  return <ChartCard title={title} subtitle={t("dashboard.scoreHistorySubtitle")}>{loading?<div className="empty-state">{t("dashboard.scoreHistoryLoading")}</div>:<ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={{left:10,right:12,top:8,bottom:24}}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date" minTickGap={28} tickFormatter={value=>format(parseISO(String(value)),"MM/yyyy",{locale:dateLocale})} label={xAxisLabel(t("common.drawDate"))}/><YAxis width={45} domain={domain} allowDataOverflow={hasDynamicScale} label={yAxisLabel(t("common.value"))}/><Tooltip labelFormatter={value=>format(parseISO(String(value)),"dd/MM/yyyy",{locale:dateLocale})} formatter={(value,name)=>[Number(value).toFixed(2),name]}/><Legend iconType="line" iconSize={10} wrapperStyle={{fontSize:9}}/><Line type="monotone" dataKey={valueKey} name={t("common.value")} stroke={color} strokeWidth={2} dot={false} activeDot={{r:4,strokeWidth:2,fill:"var(--chart-surface)"}}/><Line type="monotone" dataKey={maKey} name="MA20" stroke="#ef5b3f" strokeWidth={2.2} strokeDasharray="7 5" dot={false}/></LineChart></ResponsiveContainer>}</ChartCard>;
 }
 
 export default function Dashboard() {

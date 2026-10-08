@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
-import { MiniPieInfo } from "./Dashboard";
+import { MiniPieInfo, scoreAxisMaximum } from "./Dashboard";
 
 let container:HTMLDivElement|undefined;
 afterEach(()=>container?.remove());
@@ -20,5 +20,12 @@ describe("MiniPieInfo",()=>{
     act(()=>button.click());
     expect(container.querySelector('[role="tooltip"]')?.textContent).toContain("02, 03");
     act(()=>root.unmount());
+  });
+});
+
+describe("scoreAxisMaximum",()=>{
+  it("adds metric-specific headroom above the current maximum",()=>{
+    expect(scoreAxisMaximum([8,23,19.5],10)).toBe(33);
+    expect(scoreAxisMaximum([.24,.83,.71],1)).toBe(2);
   });
 });
