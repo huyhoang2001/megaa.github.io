@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, digitalRoot, filterCombinationsByNumbers, filterCompleteCalendarMonths, filterDraws, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, round2, runRollingBacktest } from "./analytics";
+import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, digitalRoot, filterCombinationsByNumbers, filterCompleteCalendarMonths, filterDraws, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, round2, runRollingBacktest } from "./analytics";
 import { DEFAULT_SETTINGS, INSIDE_SET } from "./domain";
 import type { Draw } from "./domain";
 import history from "./data/mega645-history.json";
@@ -51,6 +51,13 @@ describe("analytics", () => {
   it("counts and formats observed triples", () => { const triples=calculateTriples(draws); expect(triples.find(t=>t.key==="01-02-03")?.count).toBe(4); expect(triples.every(t=>/^\d{2}-\d{2}-\d{2}$/.test(t.key))).toBe(true); });
   it("computes digital roots", () => { expect(digitalRoot(186)).toBe(6); expect(digitalRoot(0)).toBe(0); });
   it("rounds technical values to hundredths", () => expect(round2(66.315)).toBe(66.32));
+  it("shrinks subset frequencies toward the exact 6-of-M chance baseline",()=>{
+    expect(chanceAdjustedSubsetScore(1,7,2,15)).toBe(50); // 1/7 is the pair baseline for 6 of 15
+    expect(chanceAdjustedSubsetScore(0,100,2,45)).toBeLessThan(50);
+    expect(chanceAdjustedSubsetScore(1,100,2,45)).toBeGreaterThan(chanceAdjustedSubsetScore(0,100,2,45));
+    expect(chanceAdjustedSubsetScore(1,1000,3,45)).toBeLessThan(90);
+    expect(chanceAdjustedSubsetScore(1,0,3,45)).toBe(50);
+  });
   it("builds a per-draw historical-frequency timeline with MA20", () => {
     const timeline=calculateOccurrenceTimeline(history.draws as Draw[]);
     expect(timeline).toHaveLength(history.draws.length);

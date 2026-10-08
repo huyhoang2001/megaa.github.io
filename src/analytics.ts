@@ -5,6 +5,23 @@ import { INSIDE_SET } from "./domain";
 export const clamp = (n: number, min = 0, max = 100) => Math.min(max, Math.max(min, n));
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
 export const pad = (n: number) => String(n).padStart(2, "0");
+/**
+ * Scores a subset's historical inclusion rate against the exact 6-of-M null.
+ * Beta-prior pseudo-draws shrink sparse observations toward chance, with more
+ * shrinkage for higher-order subsets. 50 is chance-level; scores are ranking
+ * signals, not probabilities that a number will be drawn next.
+ */
+export function chanceAdjustedSubsetScore(observed:number,drawCount:number,subsetSize:1|2|3,maxNumber:number):number{
+  if(drawCount<=0||maxNumber<6||subsetSize>6)return 50;
+  let baseline=1;
+  for(let i=0;i<subsetSize;i++)baseline*=(6-i)/(maxNumber-i);
+  const strength=20*subsetSize*subsetSize;
+  const posterior=(Math.max(0,observed)+strength*baseline)/(drawCount+strength);
+  const epsilon=1e-12;
+  const logit=(value:number)=>Math.log(clamp(value,epsilon,1-epsilon)/(1-clamp(value,epsilon,1-epsilon)));
+  const relativeOdds=logit(posterior)-logit(baseline);
+  return round2(100/(1+Math.exp(-relativeOdds)));
+}
 export function filterCombinationsByNumbers<T extends {numbers:number[]}>(items:T[],query:string):T[]{
   const value=query.trim();
   if(!value)return items;
@@ -221,11 +238,14 @@ export function calculateTriples(draws: Draw[],maxNumber=45): TripleStats[] {
 }
 
 export function scoreCandidateCombinations(numberSets:number[][],singles:SingleNumberStats[],pairs:PairStats[],triples:TripleStats[],settings:AnalysisSettings,history:Draw[]=[]):CandidateCombination[]{
-  const singleMap = new Map(singles.map(x => [x.number, x.models.consensus.normalizedScore]));
+  const maxNumber=singles.length||45;
+  const observedDraws=history.length||singles.reduce((sum,item)=>sum+item.totalCount,0)/6;
+  const singleMap = new Map(singles.map(x => [x.number,{
+    chance:chanceAdjustedSubsetScore(x.totalCount,observedDraws,1,maxNumber),
+    consensus:x.models.consensus.normalizedScore,
+  }]));
   const pairMap = new Map(pairs.map(x => [x.key, x]));
   const tripleMap = new Map(triples.map(x => [x.key, x]));
-  const maxPairLift = Math.max(1, ...pairs.filter(x=>x.count>=(settings.minPairSupport??2)).map(x => x.lift));
-  const maxTripleLift = Math.max(1, ...triples.map(x => x.lift));
   const w = settings.comboWeightsV2??{consensus:30,pair:20,triple:10,structure:25,novelty:15};
   const historySets=history.map(draw=>new Set(draw.numbers));
   return numberSets.map(numbers => {
@@ -233,9 +253,20 @@ export function scoreCandidateCombinations(numberSets:number[][],singles:SingleN
     const root = digitalRoot(total);
     const evenCount = numbers.filter(n => n % 2 === 0).length;
     const insideCount = numbers.filter(n => INSIDE_SET.has(n)).length;
-    const pairScore = combinations(numbers, 2).reduce((sum, pair) => {const stat=pairMap.get(pair.map(pad).join("-"));if(!stat||stat.count<(settings.minPairSupport??2))return sum;const multiplier=stat.confidence==="HIGH"?1:stat.confidence==="MEDIUM"?.8:.5;return sum+stat.lift/maxPairLift*100*multiplier;}, 0) / 15;
-    const tripleScore = combinations(numbers, 3).reduce((sum, triple) => {const stat=tripleMap.get(triple.map(pad).join("-"));if(!stat)return sum;const multiplier=stat.confidence==="HIGH"?1:stat.confidence==="MEDIUM"?.8:.5;return sum+stat.lift/maxTripleLift*100*multiplier;}, 0) / 20;
-    const singleScore = numbers.reduce((sum, n) => sum + (singleMap.get(n) ?? 0), 0) / 6;
+    const pairScore = combinations(numbers, 2).reduce((sum, pair) => {
+      const stat=pairMap.get([...pair].sort((a,b)=>a-b).map(pad).join("-"));
+      return sum+chanceAdjustedSubsetScore(stat?.count??0,observedDraws,2,maxNumber);
+    }, 0) / 15;
+    const tripleScore = combinations(numbers, 3).reduce((sum, triple) => {
+      const stat=tripleMap.get([...triple].sort((a,b)=>a-b).map(pad).join("-"));
+      return sum+chanceAdjustedSubsetScore(stat?.count??0,observedDraws,3,maxNumber);
+    }, 0) / 20;
+    // Blend calibrated frequency evidence with consensus so scoring presets
+    // can continue to emphasize gap, momentum, and association signals.
+    const singleScore = numbers.reduce((sum, n) => {
+      const item=singleMap.get(n);
+      return sum+(item?(item.chance+item.consensus)/2:50);
+    }, 0) / 6;
     const structureRaw = ({8:30,5:25,3:20,1:15} as Record<number, number>)[root] ?? 0;
     const parity = evenCount === 3 ? 30 : evenCount === 2 || evenCount === 4 ? 25 : 0;
     const distribution = insideCount === 4 ? 30 : insideCount === 3 ? 25 : 0;
