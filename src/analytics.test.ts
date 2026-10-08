@@ -145,15 +145,26 @@ describe("analytics", () => {
     expect(result.rows.flatMap(row=>row.predictions).every(prediction=>Number.isFinite(prediction.tripleScore)&&prediction.insideCount+prediction.outsideCount===6&&prediction.evenCount+prediction.oddCount===6)).toBe(true);
     expect(result.distribution.reduce((sum,count)=>sum+count,0)).toBe(result.tests);
   });
-  it("uses user-entered results as actuals and generates proposed sets",()=>{
-    const actual=[1,2,3,4,7,45];
+  it("uses entered sets as proposals against the final selected draw",()=>{
+    const proposed=[1,2,3,4,7,45];
     const options={fromDate:"2026-01-01",toDate:"2026-03-19",trainingDraws:10,predictionCount:2};
-    const result=backtestRange(draws,DEFAULT_SETTINGS,{...options,manualResults:[actual]});
+    const result=backtestRange(draws,DEFAULT_SETTINGS,{...options,manualProposedSets:[proposed]});
     expect(result.rows).toHaveLength(1);
-    expect(result.rows[0].actual).toEqual(actual);
+    expect(result.rows[0].date).toBe("2026-03-19");
+    expect(result.rows[0].actual).toEqual(draws.at(-1)?.numbers);
     expect(result.rows[0].predictions).toHaveLength(1);
-    expect(result.rows[0].predictions.map(prediction=>prediction.numbers)).toEqual([actual]);
-    expect(result.rows[0].predictions[0].matches).toBe(6);
+    expect(result.rows[0].predictions[0].numbers).toEqual(proposed);
+    expect(result.rows[0].predictions[0].matches).toBe(proposed.filter(number=>draws.at(-1)?.numbers.includes(number)).length);
+  });
+  it("runs each comma-separated entered set against the final selected draw",()=>{
+    const manual=parseCompactCombinations("111721222630,021617263335,192122242835,111216192326",45);
+    expect(manual.valid).toBe(true);
+    const testDraws=[...draws,...Array.from({length:4},(_,index)=>({...draws[index],id:`extra-${index}`,date:`2026-04-${String(index*7+1).padStart(2,"0")}`}))];
+    const result=backtestRange(testDraws,DEFAULT_SETTINGS,{fromDate:"2026-01-01",toDate:"2026-04-30",trainingDraws:10,predictionCount:2,manualProposedSets:manual.combinations});
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].date).toBe("2026-04-22");
+    expect(result.rows[0].actual).toEqual(testDraws.at(-1)?.numbers);
+    expect(result.rows[0].predictions.map(prediction=>prediction.numbers)).toEqual(manual.combinations);
   });
   it("enables the full training tier supported by the selected range",()=>{
     const repeated=(count:number)=>Array.from({length:count},(_,index)=>({...draws[0],id:String(index),date:"2026-01-01"}));

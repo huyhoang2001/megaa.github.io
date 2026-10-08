@@ -386,7 +386,7 @@ export function backtest(draws: Draw[], settings: AnalysisSettings, count = 12,m
   return { distribution, average: tests ? totalMatches / tests : 0, best, tests };
 }
 
-export type BacktestRangeOptions={fromDate:string;toDate:string;trainingDraws:number;predictionCount:number;maxNumber?:number;manualResults?:number[][]};
+export type BacktestRangeOptions={fromDate:string;toDate:string;trainingDraws:number;predictionCount:number;maxNumber?:number;manualProposedSets?:number[][]};
 export type BacktestPrediction=CandidateCombination&{count:number;rate:number;matches:number};
 export type BacktestResultRow={targetId:string;date:string;predictions:BacktestPrediction[];actual:number[];bestMatches:number};
 
@@ -419,12 +419,12 @@ export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:Bac
     rows.push({targetId,date,predictions,actual,bestMatches});
   };
   const range=draws.filter(draw=>draw.date>=options.fromDate&&draw.date<=options.toDate);
-  const manualResults=options.manualResults;
-  const targets=manualResults?.length?range.slice(-manualResults.length):range.slice(-1);
+  const manualProposedSets=options.manualProposedSets;
+  const targets=range.slice(-1);
   targets.forEach((target,index)=>{
     const targetIndex=range.indexOf(target);
     const history=range.slice(0,targetIndex).slice(-trainingDraws);
-    if(history.length===trainingDraws)evaluate(history,manualResults?.[index]??target.numbers,target.id,target.date,manualResults);
+    if(history.length===trainingDraws)evaluate(history,target.numbers,target.id,target.date,manualProposedSets);
   });
   return {distribution,average:rows.length?totalMatches/rows.length:0,best,tests:rows.length,rows};
 }
