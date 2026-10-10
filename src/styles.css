@@ -167,12 +167,19 @@ tbody tr:last-child>td{border-bottom:0}
 .game-switch button{height:34px;padding:0 13px;border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:11px;font-weight:750;white-space:nowrap}
 .game-switch button:hover{color:var(--ink);background:#eef3f6}
 .game-switch button.active{background:#102e35;color:#fff}
-.dashboard-game-row{display:flex;justify-content:flex-end;margin:0 2px 10px}
 .bonus-separator{display:inline-grid;place-items:center;color:var(--muted);font-size:18px;font-weight:700}
 [data-theme="dark"] .game-switch{background:#16252f;border-color:#2b3e49;box-shadow:0 7px 22px rgba(0,0,0,.18)}
 [data-theme="dark"] .game-switch button:hover{background:#223743;color:#e8f0f5}
 [data-theme="dark"] .game-switch button.active{background:#e7f0f3;color:#122832}
-@media(max-width:640px){.game-switch{width:100%}.game-switch button{flex:1;padding-inline:8px}.dashboard-game-row{margin-inline:0}}
+@media(max-width:640px){.game-switch{width:100%}.game-switch button{flex:1;padding-inline:8px}}
+.topbar>div.topbar-controls:first-of-type{position:absolute;left:50%;transform:translateX(-50%);display:flex;flex-direction:row;align-items:center;gap:8px;white-space:nowrap}
+.topbar-controls .language-control,.topbar-controls .theme-control{margin:0}
+.topbar-controls .game-switch{width:auto}
+.topbar-controls .game-switch button{flex:none}
+.topbar>.data-chip{margin-left:auto}
+@media(min-width:1281px){.backtest-controls{grid-template-columns:minmax(340px,1.6fr) repeat(3,minmax(140px,.8fr))}}
+@media(min-width:761px) and (max-width:1280px){.backtest-dates{grid-column:1/-1}}
+@media(max-width:600px){.topbar{height:106px}.topbar>div.topbar-controls:first-of-type{display:grid;grid-template-columns:auto auto;justify-content:center;gap:4px 8px;width:calc(100% - 72px)}.topbar-controls .game-switch{grid-column:1/-1;justify-self:center}}
 .jackpot>div{display:flex;flex-direction:column}.power-jackpots{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-inline:14px}.power-jackpots>div+div{border-left:1px solid var(--line)}.power-jackpots b{font-size:13px}.draw-form{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
 @media(max-width:640px){.power-jackpots{grid-template-columns:1fr;gap:5px}.power-jackpots>div+div{border-left:0}}
 

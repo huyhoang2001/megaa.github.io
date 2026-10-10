@@ -12,7 +12,6 @@ import { useLotteryStore } from "../store";
 import { useI18n } from "../i18n";
 import type { TranslationKey } from "../i18n";
 import { Card, CardHeader, EmptyState, NumberBall, ScoreBadge, Select } from "../ui";
-import GameSwitch from "../GameSwitch";
 
 const COLORS = ["#d43d28", "#f0a92f", "#2a68a8", "#1f8b63", "#7a5aa6"];
 const money = new Intl.NumberFormat("en-US");
@@ -186,7 +185,6 @@ export default function Dashboard() {
   };
 
   return <div className="dashboard">
-    <div className="dashboard-game-row"><GameSwitch/></div>
     <section className="hero-banner">
       <div><div className="brand-mark">{gameConfig.shortName} <span>6/{gameConfig.maxNumber}</span></div><h1>{t("dashboard.title")}</h1><p>{filtered.length ? t("dashboard.drawBasis",{count:filtered.length}) : t("dashboard.noHistory")}</p></div>
       <div className="banner-kpis"><div><b>{filtered.length}</b><span>{t("dashboard.totalDraws")}</span></div><div><b>{filtered[0] ? format(parseISO(filtered[0].date),"dd/MM/yyyy") : "-"}</b><span>{t("dashboard.from")}</span></div><div><b>{latest ? format(parseISO(latest.date),"dd/MM/yyyy") : "-"}</b><span>{t("dashboard.to")}</span></div></div>
