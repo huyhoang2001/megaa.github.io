@@ -24,6 +24,10 @@ const draws: Draw[] = [
 
 describe("analytics", () => {
   it("filters periods without changing order", () => expect(filterDraws(draws,"last10").map(d=>d.id)).toEqual(draws.slice(-10).map(d=>d.id)));
+  it("selects the latest 20 draws", () => {
+    const real=history.draws as Draw[];
+    expect(filterDraws(real,"last20").map(draw=>draw.id)).toEqual(real.slice(-20).map(draw=>draw.id));
+  });
   it("ends rolling month periods at the latest available draw", () => {
     const real=history.draws as Draw[];
     const year=filterDraws(real,"last1year");

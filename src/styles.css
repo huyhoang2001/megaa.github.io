@@ -232,3 +232,26 @@ tbody tr:last-child>td{border-bottom:0}
 .dashboard .score-history-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
 @media(max-width:1250px){.dashboard .score-history-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:640px){.dashboard .score-history-grid{grid-template-columns:1fr}}
+
+.latest-draw-carousel{display:flex;align-items:center;gap:6px;padding:0 12px}
+.latest-draw-carousel .balls{flex:1;min-width:0;flex-wrap:wrap;gap:8px;padding:22px 0 16px}
+.latest-draw-nav{width:36px;height:42px;flex:none;display:grid;place-items:center;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--blue-dark);cursor:pointer}
+.latest-draw-nav:hover:not(:disabled){background:var(--table-hover)}
+.latest-draw-nav:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+.latest-draw-nav:disabled{opacity:.35;cursor:not-allowed}
+@media(max-width:640px){.latest-draw-carousel{gap:3px;padding:0 7px}.latest-draw-carousel .balls{gap:4px}.latest-draw-nav{width:30px;height:38px}}
+
+/* Keep draw-range dates readable when the banner shares space with the sidebar. */
+.hero-banner{flex-wrap:wrap;gap:16px}
+.hero-banner>div:first-child{flex:1 1 340px;min-width:0}
+.hero-banner .banner-kpis{flex:1 1 440px;min-width:0;grid-template-columns:minmax(90px,.7fr) repeat(2,minmax(140px,1fr))}
+.hero-banner .banner-kpis div{border-bottom:0;border-right:1px solid rgba(255,255,255,.16)}
+.hero-banner .banner-kpis div:last-child{border-right:0}
+.hero-banner .banner-kpis b{white-space:nowrap;font-variant-numeric:tabular-nums}
+@media(max-width:640px){.hero-banner .banner-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.hero-banner .banner-kpis div{padding-inline:7px}.hero-banner .banner-kpis b{font-size:clamp(10px,2.7vw,13px);overflow:visible;text-overflow:clip}}
+
+.page-period-control{min-width:205px}
+@media(max-width:640px){.page-period-control{min-width:0}}
+.page-title:has(.page-period-control){flex-wrap:wrap;gap:10px}
+.page-title:has(.page-period-control) .page-actions{max-width:100%;margin-left:auto}
+@media(max-width:640px){.page-title:has(.page-period-control) .page-actions{margin-left:0}}

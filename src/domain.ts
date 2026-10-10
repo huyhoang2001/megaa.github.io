@@ -7,7 +7,7 @@ export type Draw = {
   jackpot2?: number;
 };
 
-export type PeriodPreset = "last10" | "last30" | "last50" | "last100" | "last6months" | "last1year" | "all" | "custom";
+export type PeriodPreset = "last10" | "last20" | "last30" | "last50" | "last100" | "last6months" | "last1year" | "all" | "custom";
 export type LotteryGame = "mega645" | "power655";
 export type ThemeMode = "light" | "dark" | "system";
 export type LanguageMode = "vi" | "en";
