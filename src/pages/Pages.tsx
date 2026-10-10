@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { format, parseISO } from "date-fns";
 import { useForm } from "react-hook-form";
-import { CalendarDays, Download, Info, LoaderCircle, Pencil, Play, Plus, RotateCcw, Search, Settings2, Trash2, Upload } from "lucide-react";
+import { CalendarDays, Download, Info, LoaderCircle, Pencil, Play, Plus, RotateCcw, Search, Settings2, SlidersHorizontal, Trash2, Upload } from "lucide-react";
 import { z } from "zod";
 import type { ColumnDef } from "@tanstack/react-table";
-import { filterCombinationsByNumbers, getBacktestTrainingWindows, pad, parseCompactCombinations } from "../analytics";
+import { combinationScoreKeys, filterCombinationsByNumbers, filterCombinationsByScores, getBacktestTrainingWindows, pad, parseCompactCombinations, validCombinationScoreRanges } from "../analytics";
+import type { CombinationScoreRanges } from "../analytics";
 import { LOTTERY_GAMES } from "../domain";
 import type { CandidateCombination, Draw, PairStats, SingleNumberStats, TripleStats } from "../domain";
 import { settingsForPreset, useAnalytics } from "../hooks";
@@ -116,17 +118,33 @@ export function TriplesPage(){
   ],[t]);
   return <><PageTitle title={t("pages.triplesTitle")} subtitle={t("pages.triplesSubtitle",{triples:triples.length,count:filtered.length})} actions={<><GameSwitch/><PeriodControl/></>}/><DataTable data={triples} columns={columns} labels={labels} maxRows={250}/></>;
 }
+const blankScoreRanges=():CombinationScoreRanges=>({singleScore:{min:"",max:""},pairScore:{min:"",max:""},tripleScore:{min:"",max:""},structureScore:{min:"",max:""},totalScore:{min:"",max:""}});
+const scoreLabels:Record<(typeof combinationScoreKeys)[number],TranslationKey>={singleScore:"pages.single",pairScore:"common.pair",tripleScore:"common.triple",structureScore:"prediction.structure",totalScore:"pages.totalScore"};
+
 export function CombinationsPage(){
   const {t}=useI18n();
   const labels=useTableLabels();
   const [predictionCount,setPredictionCount]=useState<20|50>(20);
   const {predictions}=useAnalytics(predictionCount);
   const [query,setQuery]=useState("");
-  const visiblePredictions=filterCombinationsByNumbers(predictions.slice(0,predictionCount),query);
+  const [filterOpen,setFilterOpen]=useState(false);
+  const [draftRanges,setDraftRanges]=useState(blankScoreRanges);
+  const [appliedRanges,setAppliedRanges]=useState(blankScoreRanges);
+  const [rangeError,setRangeError]=useState(false);
+  const hasScoreFilters=combinationScoreKeys.some(key=>appliedRanges[key].min!==""||appliedRanges[key].max!=="");
+  const visiblePredictions=filterCombinationsByScores(filterCombinationsByNumbers(predictions.slice(0,predictionCount),query),appliedRanges);
+  const applyRanges=(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();if(!validCombinationScoreRanges(draftRanges)){setRangeError(true);return;}setAppliedRanges(draftRanges);setRangeError(false);setFilterOpen(false);};
+  const clearRanges=()=>{setDraftRanges(blankScoreRanges());setAppliedRanges(blankScoreRanges());setRangeError(false);};
   const columns=useMemo<ColumnDef<CandidateCombination>[]>(()=>[
     {accessorKey:"rank",header:t("common.rank")},{id:"combination",accessorFn:row=>row.numbers.map(pad).join(" - "),header:t("common.combination")},{accessorKey:"total",header:t("pages.sum")},{accessorKey:"digitalRoot",header:t("pages.root")},{id:"evenOdd",accessorFn:row=>`${row.evenCount}/${row.oddCount}`,header:t("common.evenOdd")},{id:"insideOutside",accessorFn:row=>`${row.insideCount}/${row.outsideCount}`,header:t("common.insideOutside")},{accessorKey:"singleScore",header:t("pages.single"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"pairScore",header:t("common.pair"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"tripleScore",header:t("common.triple"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"structureScore",header:t("prediction.structure"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"totalScore",header:t("pages.totalScore"),cell:info=>info.getValue<number>().toFixed(2)},
   ],[t]);
-  return <><PageTitle title={t("pages.combinationsTitle")} subtitle={t("pages.combinationsSubtitle")} actions={<><GameSwitch/><ScoringPresetControl/><label className="page-preset-control"><span>{t("dashboard.predictionCount")}</span><Select value={predictionCount} onChange={event=>setPredictionCount(Number(event.target.value) as 20|50)}><option value={20}>Top 20</option><option value={50}>Top 50</option></Select></label></>}/><Card className="notice">{t("pages.combinationsNotice")}</Card><div className="combination-search"><label><span>{t("pages.searchCombinationLabel")}</span><div className="combination-search-field"><Search size={15} aria-hidden="true"/><input type="search" inputMode="numeric" value={query} onChange={event=>setQuery(event.target.value)} placeholder={t("pages.searchCombination")} aria-describedby="combination-search-count"/></div></label><span id="combination-search-count" aria-live="polite">{t("pages.combinationMatches",{count:visiblePredictions.length,total:Math.min(predictions.length,predictionCount)})}</span></div><DataTable data={visiblePredictions} columns={columns} labels={labels} onReset={()=>setQuery("")}/></>;
+  return <>
+    <PageTitle title={t("pages.combinationsTitle")} subtitle={t("pages.combinationsSubtitle")} actions={<><GameSwitch/><PeriodControl/><ScoringPresetControl/><label className="page-preset-control"><span>{t("dashboard.predictionCount")}</span><Select value={predictionCount} onChange={event=>setPredictionCount(Number(event.target.value) as 20|50)}><option value={20}>Top 20</option><option value={50}>Top 50</option></Select></label></>}/>
+    <Card className="notice">{t("pages.combinationsNotice")}</Card>
+    <div className="combination-search"><div className="combination-search-controls"><label><span>{t("pages.searchCombinationLabel")}</span><div className="combination-search-field"><Search size={15} aria-hidden="true"/><input type="search" inputMode="numeric" value={query} onChange={event=>setQuery(event.target.value)} placeholder={t("pages.searchCombination")} aria-describedby="combination-search-count"/></div></label><Button type="button" className={`secondary combination-filter-toggle${hasScoreFilters?" active":""}`} aria-expanded={filterOpen} aria-controls="combination-score-filters" onClick={()=>{if(!filterOpen){setDraftRanges(appliedRanges);setRangeError(false);}setFilterOpen(!filterOpen);}}><SlidersHorizontal size={16}/>{t("pages.customFilters")}</Button></div><span id="combination-search-count" aria-live="polite">{t("pages.combinationMatches",{count:visiblePredictions.length,total:Math.min(predictions.length,predictionCount)})}</span></div>
+    {filterOpen&&<form id="combination-score-filters" className="combination-score-filters" onSubmit={applyRanges} noValidate><div className="combination-score-grid">{combinationScoreKeys.map(key=><fieldset key={key}><legend>{t(scoreLabels[key])}</legend><label>{t("pages.scoreMinimum")}<input type="number" min="0" max="100" step="any" value={draftRanges[key].min} onChange={event=>{setDraftRanges(current=>({...current,[key]:{...current[key],min:event.target.value}}));setRangeError(false);}}/></label><label>{t("pages.scoreMaximum")}<input type="number" min="0" max="100" step="any" value={draftRanges[key].max} onChange={event=>{setDraftRanges(current=>({...current,[key]:{...current[key],max:event.target.value}}));setRangeError(false);}}/></label></fieldset>)}</div>{rangeError&&<p className="combination-filter-error" role="alert">{t("pages.invalidScoreRange")}</p>}<div className="combination-filter-actions"><Button type="button" className="secondary" onClick={clearRanges}>{t("pages.clearScoreFilters")}</Button><Button type="submit">{t("pages.applyScoreFilters")}</Button></div></form>}
+    <DataTable data={visiblePredictions} columns={columns} labels={labels} onReset={()=>{setQuery("");clearRanges();}}/>
+  </>;
 }
 export function BacktestPage(){
   const {t}=useI18n();

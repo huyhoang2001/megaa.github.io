@@ -29,6 +29,22 @@ export function filterCombinationsByNumbers<T extends {numbers:number[]}>(items:
   if(!numbers.length||numbers.length>6)return [];
   return items.filter(item=>numbers.every(number=>item.numbers.includes(number)));
 }
+export const combinationScoreKeys=["singleScore","pairScore","tripleScore","structureScore","totalScore"] as const;
+export type CombinationScoreRanges=Record<(typeof combinationScoreKeys)[number],{min:string;max:string}>;
+export function validCombinationScoreRanges(ranges:CombinationScoreRanges):boolean{
+  return combinationScoreKeys.every(key=>{
+    const {min,max}=ranges[key];
+    const lower=min.trim()===""?null:Number(min);
+    const upper=max.trim()===""?null:Number(max);
+    return [lower,upper].every(value=>value===null||(Number.isFinite(value)&&value>=0&&value<=100))&&(lower===null||upper===null||lower<=upper);
+  });
+}
+export function filterCombinationsByScores<T extends Pick<CandidateCombination,(typeof combinationScoreKeys)[number]>>(items:T[],ranges:CombinationScoreRanges):T[]{
+  return items.filter(item=>combinationScoreKeys.every(key=>{
+    const {min,max}=ranges[key];
+    return (min.trim()===""||item[key]>=Number(min))&&(max.trim()===""||item[key]<=Number(max));
+  }));
+}
 export type CompactCombinationIssue={entryIndex:number;chunkIndex?:number;value:string};
 export function parseCompactCombinations(input:string,maxNumber:number){
   const entries=input.split(/[,\n]+/).map(value=>value.trim()).filter(Boolean);

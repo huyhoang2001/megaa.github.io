@@ -8,7 +8,7 @@ import { useLotteryStore } from "./store";
 
 it("does not recalculate analytics for display-only selector changes",()=>{
   const previous=useLotteryStore.getState();
-  const draws:Draw[]=[{id:"one",date:"2026-01-01",numbers:[1,2,3,4,5,6],jackpot:1}];
+  const draws:Draw[]=Array.from({length:12},(_,index)=>({id:String(index),date:`2026-01-${String(index+1).padStart(2,"0")}`,numbers:[1,2,3,4,5,7+index] as Draw["numbers"],jackpot:1}));
   useLotteryStore.setState({draws,selectedGame:"mega645",settings:DEFAULT_SETTINGS,dashboardFilters:{...DEFAULT_FILTERS,period:"all"}});
   const container=document.createElement("div");
   document.body.append(container);
@@ -24,8 +24,16 @@ it("does not recalculate analytics for display-only selector changes",()=>{
     act(()=>root.render(createElement(Probe,{count:50})));
     expect(result!.singles).toBe(initial.singles);
     expect(result!.predictions).not.toBe(initial.predictions);
+    const beforePeriodChange=result!;
+    act(()=>useLotteryStore.getState().updateDashboardFilters({period:"last10"}));
+    expect(result!.filtered).toHaveLength(10);
+    expect(result!.singles.find(item=>item.number===1)?.totalCount).toBe(10);
+    expect(result!.pairs.find(item=>item.key==="01-02")?.count).toBe(10);
+    expect(result!.triples.find(item=>item.key==="01-02-03")?.count).toBe(10);
+    expect(result!.predictions).not.toBe(beforePeriodChange.predictions);
+    const periodSingles=result!.singles;
     act(()=>root.render(createElement(Probe,{skip:true})));
-    expect(result!.singles).toBe(initial.singles);
+    expect(result!.singles).toBe(periodSingles);
     expect(result!.predictions).toEqual([]);
   } finally {
     act(()=>root.unmount());

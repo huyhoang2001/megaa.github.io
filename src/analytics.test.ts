@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, digitalRoot, filterCombinationsByNumbers, filterCompleteCalendarMonths, filterDraws, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, round2, runRollingBacktest } from "./analytics";
+import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, digitalRoot, filterCombinationsByNumbers, filterCombinationsByScores, filterCompleteCalendarMonths, filterDraws, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, round2, runRollingBacktest, validCombinationScoreRanges } from "./analytics";
+import type { CombinationScoreRanges } from "./analytics";
 import { DEFAULT_SETTINGS, INSIDE_SET } from "./domain";
 import type { Draw } from "./domain";
 import history from "./data/mega645-history.json";
@@ -111,6 +112,18 @@ describe("analytics", () => {
     expect(filterCombinationsByNumbers(items,"031926").map(item=>item.rank)).toEqual([1]);
     expect(filterCombinationsByNumbers(items,"")).toBe(items);
     expect(filterCombinationsByNumbers(items,"none")).toEqual([]);
+  });
+  it("applies inclusive score ranges only to matching suggested combinations",()=>{
+    const ranges:CombinationScoreRanges={singleScore:{min:"40",max:"50"},pairScore:{min:"",max:"10"},tripleScore:{min:"",max:""},structureScore:{min:"",max:""},totalScore:{min:"60",max:""}};
+    const items=[
+      {singleScore:40,pairScore:10,tripleScore:0,structureScore:85,totalScore:60},
+      {singleScore:50.01,pairScore:5,tripleScore:0,structureScore:85,totalScore:65},
+      {singleScore:45,pairScore:11,tripleScore:0,structureScore:85,totalScore:65},
+    ];
+    expect(validCombinationScoreRanges(ranges)).toBe(true);
+    expect(filterCombinationsByScores(items,ranges)).toEqual([items[0]]);
+    expect(validCombinationScoreRanges({...ranges,singleScore:{min:"51",max:"50"}})).toBe(false);
+    expect(validCombinationScoreRanges({...ranges,pairScore:{min:"",max:"101"}})).toBe(false);
   });
   it("parses compact manual combinations and identifies invalid segments",()=>{
     const mega=parseCompactCombinations("101436374143",45);
