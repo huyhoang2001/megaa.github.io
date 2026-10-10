@@ -15,17 +15,19 @@ export function settingsForPreset(settings: AnalysisSettings, preset: string):An
   return settings;
 }
 
-export function useAnalytics() {
+export function useAnalytics(topCombinationCount?:number, skipPredictions=false) {
   const { draws:megaDraws, powerDraws, selectedGame, settings, dashboardFilters } = useLotteryStore();
-  return useMemo(() => {
+  const {period,fromDate,toDate,scoringPreset}=dashboardFilters;
+  const stats=useMemo(() => {
     const gameConfig=LOTTERY_GAMES[selectedGame];
     const draws=selectedGame==="power655"?powerDraws:megaDraws;
-    const effectiveSettings = settingsForPreset(settings, dashboardFilters.scoringPreset);
-    const filtered = filterDraws(draws, dashboardFilters.period, dashboardFilters.fromDate, dashboardFilters.toDate);
+    const effectiveSettings = settingsForPreset(settings, scoringPreset);
+    const filtered = filterDraws(draws, period, fromDate, toDate);
     const singles = calculateSingles(filtered, effectiveSettings,gameConfig.maxNumber);
     const pairs = calculatePairs(filtered,gameConfig.maxNumber);
     const triples = calculateTriples(filtered,gameConfig.maxNumber);
-    const predictions = generateCandidates(singles, pairs, triples, effectiveSettings, filtered);
-    return { draws,filtered,singles,pairs,triples,predictions,selectedGame,gameConfig,effectiveSettings };
-  }, [megaDraws,powerDraws,selectedGame,settings,dashboardFilters]);
+    return { draws,filtered,singles,pairs,triples,selectedGame,gameConfig,effectiveSettings };
+  }, [megaDraws,powerDraws,selectedGame,settings,period,fromDate,toDate,scoringPreset]);
+  const predictions=useMemo(()=>skipPredictions?[]:generateCandidates(stats.singles,stats.pairs,stats.triples,topCombinationCount?{...stats.effectiveSettings,topCombinationCount:Math.max(stats.effectiveSettings.topCombinationCount,topCombinationCount)}:stats.effectiveSettings,stats.filtered),[stats,topCombinationCount,skipPredictions]);
+  return {...stats,predictions};
 }
