@@ -36,7 +36,7 @@ const previousDefaultRoots=[[8,5,3,1],[1,2,3,4,5,6,7,8,9]];
 const selectablePeriods=new Set<DashboardFilters["period"]>(["last30","last50","last100","last1year","all"]);
 export const normalizeDashboardFilters=(filters?:Partial<DashboardFilters>):DashboardFilters=>{
   const merged={...DEFAULT_FILTERS,...filters};
-  return {...merged,period:selectablePeriods.has(merged.period)?merged.period:DEFAULT_FILTERS.period};
+  return {...merged,period:selectablePeriods.has(merged.period)?merged.period:DEFAULT_FILTERS.period,scoringPreset:merged.scoringPreset==="Gap"?DEFAULT_FILTERS.scoringPreset:merged.scoringPreset};
 };
 export const mergeBundledDraws=(stored:Draw[]|undefined,bundledDraws:Draw[]):Draw[]=>{
   if(!stored?.length)return bundledDraws;
@@ -117,7 +117,7 @@ export const useLotteryStore = create<State>()(persist((set) => ({
       powerDraws:mergeBundledPowerDraws(state.powerDraws),
       settings:mergeSettings(state.settings),
       dashboardFilters:normalizeDashboardFilters(state.dashboardFilters),
-      independentFilterConfig:{...DEFAULT_INDEPENDENT_FILTER,...state.independentFilterConfig},
+      independentFilterConfig:{...DEFAULT_INDEPENDENT_FILTER,...state.independentFilterConfig,preset:state.independentFilterConfig?.preset==="Gap"?DEFAULT_INDEPENDENT_FILTER.preset:state.independentFilterConfig?.preset??DEFAULT_INDEPENDENT_FILTER.preset},
     };
   },
 }));

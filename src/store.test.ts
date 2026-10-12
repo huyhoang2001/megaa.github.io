@@ -7,6 +7,7 @@ describe("Power history persistence migration",()=>{
   it("uses only the five selectable periods for saved filters",()=>{
     expect(normalizeDashboardFilters({period:"last10"}).period).toBe("last1year");
     expect(normalizeDashboardFilters({period:"last50"}).period).toBe("last50");
+    expect(normalizeDashboardFilters({scoringPreset:"Gap"}).scoringPreset).toBe("Default");
   });
   it("upgrades the previous default digital roots",()=>{
     expect(mergeSettings({allowedDigitalRoots:[1,3,5,8]}).allowedDigitalRoots).toEqual([1,3,5,6,7,8,9]);

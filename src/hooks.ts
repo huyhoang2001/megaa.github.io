@@ -9,7 +9,6 @@ export function settingsForPreset(settings: AnalysisSettings, preset: string):An
   if (preset === "Default") return {...settings,gapModelVersion:"legacy",consensusWeights:{...DEFAULT_SETTINGS.consensusWeights},comboWeightsV2:{...DEFAULT_SETTINGS.comboWeightsV2}};
   if (preset === "Balanced") return { ...settings,gapModelVersion:"legacy", consensusWeights:{frequency:25,momentum:25,gap:25,association:25}, comboWeightsV2:{consensus:35,pair:20,triple:5,structure:25,novelty:15} };
   if (preset === "Hot") return { ...settings,gapModelVersion:"legacy", consensusWeights:{frequency:25,momentum:55,gap:5,association:15}, comboWeightsV2:{consensus:45,pair:15,triple:5,structure:20,novelty:15} };
-  if (preset === "Gap") return { ...settings, gapModelVersion:"legacy",consensusWeights:{frequency:10,momentum:10,gap:65,association:15}, comboWeightsV2:{consensus:45,pair:10,triple:5,structure:25,novelty:15} };
   if (preset === "Gap + Frequency") return { ...settings,gapModelVersion:"v2",consensusWeights:{frequency:25,momentum:5,gap:65,association:5},comboWeightsV2:{consensus:45,pair:10,triple:5,structure:25,novelty:15} };
   if (preset === "Pair") return { ...settings,gapModelVersion:"legacy", consensusWeights:{frequency:15,momentum:10,gap:10,association:65}, comboWeightsV2:{consensus:25,pair:45,triple:5,structure:15,novelty:10} };
   if (preset === "Triple") return { ...settings,gapModelVersion:"legacy", consensusWeights:{frequency:20,momentum:10,gap:10,association:60}, comboWeightsV2:{consensus:25,pair:15,triple:40,structure:10,novelty:10} };

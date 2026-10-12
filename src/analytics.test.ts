@@ -271,7 +271,7 @@ describe("analytics", () => {
   });
   it("applies V2 scoring presets to consensus and top predictions",()=>{
     const real=history.draws as Draw[];
-    const gapSettings=settingsForPreset(DEFAULT_SETTINGS,"Gap");
+    const gapSettings=settingsForPreset(DEFAULT_SETTINGS,"Gap + Frequency");
     const pairSettings=settingsForPreset(DEFAULT_SETTINGS,"Pair");
     expect(gapSettings.consensusWeights.gap).toBe(65);
     expect(pairSettings.comboWeightsV2.pair).toBe(45);
