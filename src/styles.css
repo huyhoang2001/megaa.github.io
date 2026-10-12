@@ -246,7 +246,8 @@ tbody tr:last-child>td{border-bottom:0}
 @media(max-width:640px){.dashboard .score-history-grid{grid-template-columns:1fr}}
 
 .latest-draw-carousel{display:flex;align-items:center;gap:6px;padding:0 12px}
-.latest-draw-carousel .balls{flex:1;min-width:0;flex-wrap:wrap;gap:8px;padding:22px 0 16px}
+.latest-draw-carousel .balls{flex:1;min-width:0;flex-wrap:nowrap;gap:8px;padding:22px 0 16px}
+.latest-draw-carousel .number-ball{flex:1 1 0;min-width:0;max-width:48px;width:0;height:auto;aspect-ratio:1;border-width:clamp(3px,.45vw,6px);font-size:clamp(10px,1.2vw,16px)}
 .latest-draw-nav{width:36px;height:42px;flex:none;display:grid;place-items:center;border:1px solid var(--line);border-radius:12px;background:var(--surface);color:var(--blue-dark);cursor:pointer}
 .latest-draw-nav:hover:not(:disabled){background:var(--table-hover)}
 .latest-draw-nav:focus-visible{outline:2px solid var(--blue);outline-offset:2px}
