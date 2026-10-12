@@ -3,8 +3,13 @@ import { createRoot } from "react-dom/client";
 import { expect, it } from "vitest";
 import { DEFAULT_FILTERS, DEFAULT_SETTINGS } from "./domain";
 import type { Draw } from "./domain";
-import { useAnalytics } from "./hooks";
+import { settingsForPreset, useAnalytics } from "./hooks";
 import { useLotteryStore } from "./store";
+
+it("preserves the former Gap preset as Legacy Gap",()=>{
+  expect(settingsForPreset(DEFAULT_SETTINGS,"Legacy Gap")).toMatchObject({gapModelVersion:"legacy",consensusWeights:{frequency:10,momentum:10,gap:65,association:15}});
+  expect(settingsForPreset(DEFAULT_SETTINGS,"Gap")).toEqual(settingsForPreset(DEFAULT_SETTINGS,"Legacy Gap"));
+});
 
 it("does not recalculate analytics for display-only selector changes",()=>{
   const previous=useLotteryStore.getState();

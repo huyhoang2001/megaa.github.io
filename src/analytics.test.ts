@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculatePortfolioCoverage, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, digitalRoot, filterCombinationsByNumbers, filterCombinationsByScores, filterCompleteCalendarMonths, filterDraws, generateCandidateUniverse, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, percentileRank, round2, runPortfolioRollingBacktest, runRollingBacktest, scoreCandidateCombinations, selectFilteredPortfolio, selectPortfolio, validCombinationScoreRanges, weightedAverage } from "./analytics";
+import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculatePortfolioCoverage, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, digitalRoot, exactTopNumbers, filterCombinationsByNumbers, filterCombinationsByScores, filterCompleteCalendarMonths, filterDraws, generateCandidateUniverse, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, percentileRank, round2, runPortfolioRollingBacktest, runRollingBacktest, scoreCandidateCombinations, selectFilteredPortfolio, selectPortfolio, validCombinationScoreRanges, weightedAverage } from "./analytics";
 import type { CombinationScoreRanges } from "./analytics";
 import { DEFAULT_SETTINGS, INSIDE_SET } from "./domain";
 import type { Draw } from "./domain";
@@ -82,6 +82,17 @@ describe("analytics", () => {
     const timeline=calculateScoreTimeline(source,DEFAULT_SETTINGS,45,targets.map(draw=>draw.id));
     expect(timeline.map(point=>point.id)).toEqual(targets.map(draw=>draw.id));
     expect(calculateScoreTimeline(draws,DEFAULT_SETTINGS)).toEqual([]);
+  });
+  it("keeps score training windows separate from the displayed date range",()=>{
+    const source=(history.draws as Draw[]).slice(-110);
+    const target=source.at(-1)!;
+    for(const window of [30,50,100]){
+      const point=calculateScoreTimeline(source,DEFAULT_SETTINGS,45,[target.id],window)[0];
+      const training=source.slice(-window-1,-1);
+      const [expected]=scoreCandidateCombinations([target.numbers],calculateSingles(training,DEFAULT_SETTINGS),calculatePairs(training),calculateTriples(training),DEFAULT_SETTINGS,training);
+      expect(point.total).toBe(round2(expected.totalScore));
+      expect(calculateScoreTimeline(source,DEFAULT_SETTINGS,45,[target.id],window)).toHaveLength(1);
+    }
   });
   it("groups draw density by calendar month", () => {
     const real=history.draws as Draw[];
@@ -192,11 +203,40 @@ describe("analytics", () => {
     expect(result.rows[0].predictions.map(prediction=>prediction.numbers)).toEqual(manual.combinations);
   });
   it("enables the full training tier supported by the selected range",()=>{
-    const repeated=(count:number)=>Array.from({length:count},(_,index)=>({...draws[0],id:String(index),date:"2026-01-01"}));
-    expect(getBacktestTrainingWindows(repeated(30),"2026-01-01","2026-01-01")).toEqual({priorDraws:29,windows:[]});
+    const repeated=(count:number)=>Array.from({length:count},(_,index)=>({...draws[0],id:String(index).padStart(3,"0"),date:"2026-01-01"}));
+    expect(getBacktestTrainingWindows(repeated(30),"2026-01-01","2026-01-01")).toMatchObject({priorDraws:29,windows:[]});
     expect(getBacktestTrainingWindows(repeated(31),"2026-01-01","2026-01-01").windows).toEqual([30]);
     expect(getBacktestTrainingWindows(repeated(51),"2026-01-01","2026-01-01").windows).toEqual([30,50]);
     expect(getBacktestTrainingWindows(repeated(101),"2026-01-01","2026-01-01").windows).toEqual([30,50,100]);
+  });
+  it("uses full prior history for a short target range and reports rolling eligibility",()=>{
+    const source=(history.draws as Draw[]).slice(-106);
+    const lastFive=source.slice(-5);
+    const fromDate=lastFive[0].date,toDate=lastFive.at(-1)!.date;
+    const availability=getBacktestTrainingWindows(source,fromDate,toDate);
+    expect(availability.windows).toEqual([30,50,100]);
+    expect(availability.rolling[50]).toEqual({eligibleTargetCount:5,skippedTrainingCount:0});
+    expect(backtestRange(source,DEFAULT_SETTINGS,{fromDate:toDate,toDate,trainingDraws:100,predictionCount:1}).tests).toBe(1);
+  });
+  it("selects exact Top K on ties without changing tied percentiles or model agreement",()=>{
+    expect([...exactTopNumbers(Array.from({length:45},(_,index)=>({number:index+1,score:50})),10)]).toEqual(Array.from({length:10},(_,index)=>index+1));
+    const singles=calculateSingles([],DEFAULT_SETTINGS,45);
+    expect(singles.reduce((sum,item)=>sum+item.modelAgreement,0)).toBe(40);
+    expect(new Set(singles.map(item=>item.models.gap.percentileRank))).toEqual(new Set([50]));
+  });
+  it("does not count every dense-rank tie as a Top 10 hit",()=>{
+    const repeated=Array.from({length:51},(_,index)=>({id:String(index),date:`2026-01-${String(index+1).padStart(2,"0")}`,numbers:[1,2,3,4,5,6],jackpot:0} as Draw));
+    repeated[50]={...repeated[50],numbers:[40,41,42,43,44,45]};
+    const result=runRollingBacktest(repeated,DEFAULT_SETTINGS,1);
+    expect(result.rows[0].top10).toBe(0);
+    expect(result.tieBreak).toBe("score desc, number asc");
+  });
+  it("keeps active Gap scores distinct from V2 diagnostics under legacy presets",()=>{
+    const source=(history.draws as Draw[]).slice(-50);
+    const legacy=calculateSingles(source,settingsForPreset(DEFAULT_SETTINGS,"Default"));
+    const v2=calculateSingles(source,settingsForPreset(DEFAULT_SETTINGS,"Gap + Frequency"));
+    expect(legacy.some((item,index)=>item.models.gap.normalizedScore!==item.gap.gapScore)).toBe(true);
+    expect(v2.every(item=>item.models.gap.normalizedScore===item.gap.gapScore)).toBe(true);
   });
   it("calculates advanced frequency and gap statistics from history",()=>{
     expect(calculateRollingFrequency(draws,1)).toEqual({last10:5,last20:7,last30:7,last50:7,last100:7,all:7});

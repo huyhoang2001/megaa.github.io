@@ -4,7 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Bar, BarChart, Brush, CartesianGrid, Cell, LabelList, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
 import { ChevronLeft, ChevronRight, Info, Maximize2, X } from "lucide-react";
-import { calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePortfolioCoverage, calculateScoreTimeline, digitalRoot, filterCompleteCalendarMonths, pad, round2 } from "../analytics";
+import { calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePortfolioCoverage, calculateScoreTimeline, digitalRoot, exactTopNumbers, filterCompleteCalendarMonths, pad, round2 } from "../analytics";
 import { INSIDE_SET } from "../domain";
 import type { Draw } from "../domain";
 import { useAnalytics } from "../hooks";
@@ -105,7 +105,7 @@ function JackpotHistoryChart({draws,valueKey,title,color}:{draws:Draw[];valueKey
   return <ChartCard title={title} subtitle={t("dashboard.jackpotHistorySubtitle")}>{(enlarged:boolean)=>history.length?<ResponsiveContainer width="100%" height="100%"><LineChart data={history} margin={{left:10,right:14,top:12,bottom:32}}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date" height={48} minTickGap={55} tickFormatter={value=>format(parseISO(String(value)),"dd/MM/yy",{locale:dateLocale})} label={xAxisLabel(t("common.drawDate"))}/><YAxis width={52} domain={[0,(maximum:number)=>Math.ceil(maximum/1e9*1.1)*1e9]} tickFormatter={value=>money.format(Number(value)/1e9)} label={yAxisLabel(t("dashboard.billionVnd"))}/><Tooltip labelFormatter={value=>format(parseISO(String(value)),"dd/MM/yyyy",{locale:dateLocale})} formatter={value=>[`${money.format(Number(value))} VND`,title]}/><Line type="linear" dataKey={valueKey} name={title} stroke={color} strokeWidth={2} dot={false} activeDot={{r:4}} isAnimationActive={false}/>{enlarged&&<Brush ariaLabel={t("dashboard.jackpotNavigator")} dataKey="date" height={34} travellerWidth={9} stroke={color} fill="var(--chart-surface)" tickFormatter={value=>format(parseISO(String(value)),"MM/yyyy",{locale:dateLocale})}><LineChart><Line type="linear" dataKey={valueKey} stroke={color} strokeWidth={1} dot={false} isAnimationActive={false}/></LineChart></Brush>}</LineChart></ResponsiveContainer>:<EmptyState/>}</ChartCard>;
 }
 
-function ScoreHistoryChart({title,data,valueKey,color,loading}:{title:string;data:ScoreTimeline;valueKey:ScoreValueKey;color:string;loading:boolean}){
+function ScoreHistoryChart({title,data,valueKey,color,loading,trainingWindow}:{title:string;data:ScoreTimeline;valueKey:ScoreValueKey;color:string;loading:boolean;trainingWindow:number}){
   const {language,t}=useI18n();
   const dateLocale=language==="vi"?vi:enUS;
   const maKey=`${valueKey}Ma20` as keyof ScoreTimeline[number];
@@ -114,7 +114,7 @@ function ScoreHistoryChart({title,data,valueKey,color,loading}:{title:string;dat
   const maximum=scoreAxisMaximum(data.flatMap(point=>[Number(point[valueKey]),Number(point[maKey])]),padding);
   const domain:[number,number]=hasDynamicScale?[0,maximum]:[0,100];
   const margin=hasDynamicScale?{left:10,right:12,top:18,bottom:42}:{left:10,right:12,top:12,bottom:32};
-  return <ChartCard title={title} subtitle={t("dashboard.scoreHistorySubtitle")}>{(enlarged:boolean)=>loading?<div className="empty-state">{t("dashboard.scoreHistoryLoading")}</div>:<ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={margin}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date" height={48} minTickGap={55} tickFormatter={value=>format(parseISO(String(value)),"dd/MM/yy",{locale:dateLocale})} label={xAxisLabel(t("common.drawDate"))}/><YAxis width={45} domain={domain} allowDataOverflow={hasDynamicScale} label={yAxisLabel(t("common.value"))}/><Tooltip labelFormatter={value=>format(parseISO(String(value)),"dd/MM/yyyy",{locale:dateLocale})} formatter={(value,name)=>[Number(value).toFixed(2),name]}/><Legend iconType="line" iconSize={10} wrapperStyle={{fontSize:9}}/><Line type="monotone" dataKey={valueKey} name={t("common.value")} stroke={color} strokeWidth={2} dot={false} activeDot={{r:4,strokeWidth:2,fill:"var(--chart-surface)"}}/><Line type="monotone" dataKey={maKey} name="MA20" stroke="#ef5b3f" strokeWidth={2.2} strokeDasharray="7 5" dot={false}/>{enlarged&&<Brush ariaLabel={t("dashboard.chartNavigator")} dataKey="date" height={34} travellerWidth={9} stroke={color} fill="var(--chart-surface)" tickFormatter={value=>format(parseISO(String(value)),"MM/yyyy",{locale:dateLocale})}><LineChart><Line type="monotone" dataKey={valueKey} stroke={color} dot={false} isAnimationActive={false}/><Line type="monotone" dataKey={maKey} stroke="#ef5b3f" dot={false} isAnimationActive={false}/></LineChart></Brush>}</LineChart></ResponsiveContainer>}</ChartCard>;
+  return <ChartCard title={title} subtitle={t("dashboard.scoreHistorySubtitle",{count:trainingWindow})}>{(enlarged:boolean)=>loading?<div className="empty-state">{t("dashboard.scoreHistoryLoading")}</div>:<ResponsiveContainer width="100%" height="100%"><LineChart data={data} margin={margin}><CartesianGrid strokeDasharray="3 3"/><XAxis dataKey="date" height={48} minTickGap={55} tickFormatter={value=>format(parseISO(String(value)),"dd/MM/yy",{locale:dateLocale})} label={xAxisLabel(t("common.drawDate"))}/><YAxis width={45} domain={domain} allowDataOverflow={hasDynamicScale} label={yAxisLabel(t("common.value"))}/><Tooltip labelFormatter={value=>format(parseISO(String(value)),"dd/MM/yyyy",{locale:dateLocale})} formatter={(value,name)=>[Number(value).toFixed(2),name]}/><Legend iconType="line" iconSize={10} wrapperStyle={{fontSize:9}}/><Line type="monotone" dataKey={valueKey} name={t("common.value")} stroke={color} strokeWidth={2} dot={false} activeDot={{r:4,strokeWidth:2,fill:"var(--chart-surface)"}}/><Line type="monotone" dataKey={maKey} name="MA20" stroke="#ef5b3f" strokeWidth={2.2} strokeDasharray="7 5" dot={false}/>{enlarged&&<Brush ariaLabel={t("dashboard.chartNavigator")} dataKey="date" height={34} travellerWidth={9} stroke={color} fill="var(--chart-surface)" tickFormatter={value=>format(parseISO(String(value)),"MM/yyyy",{locale:dateLocale})}><LineChart><Line type="monotone" dataKey={valueKey} stroke={color} dot={false} isAnimationActive={false}/><Line type="monotone" dataKey={maKey} stroke="#ef5b3f" dot={false} isAnimationActive={false}/></LineChart></Brush>}</LineChart></ResponsiveContainer>}</ChartCard>;
 }
 
 export default function Dashboard() {
@@ -122,6 +122,7 @@ export default function Dashboard() {
   const dateLocale=language==="vi"?vi:enUS;
   const { draws,filtered,singles,pairs,triples,predictions,selectedGame,gameConfig,effectiveSettings } = useAnalytics();
   const { dashboardFilters: filters, updateDashboardFilters } = useLotteryStore();
+  const [scoreTrainingWindow,setScoreTrainingWindow]=useState(50);
   const latest = filtered.at(-1);
   const [selectedDrawId,setSelectedDrawId]=useState<string|null>(null);
   const selectedDrawIndex=selectedDrawId===null?-1:filtered.findIndex(draw=>draw.id===selectedDrawId);
@@ -129,6 +130,7 @@ export default function Dashboard() {
   const displayedDraw=filtered[displayedDrawIndex];
   useEffect(()=>setSelectedDrawId(null),[selectedGame,filters.period]);
   const topNumbers = [...singles].sort((a,b)=>b.totalCount-a.totalCount || a.number-b.number).slice(0,10);
+  const topFiveScores=exactTopNumbers(singles.map(item=>({number:item.number,score:item.technicalScore})),5);
   const frequencyBuckets = [
     { name: ">=20", value: singles.filter(x=>x.totalCount>=20).length },
     { name: "16-19", value: singles.filter(x=>x.totalCount>=16&&x.totalCount<20).length },
@@ -144,14 +146,16 @@ export default function Dashboard() {
   const timeline = calculateOccurrenceTimeline(draws).filter(point=>visibleDrawIds.has(point.id));
   const [scoreTimeline,setScoreTimeline]=useState<ScoreTimeline>([]);
   const [scoreTimelineLoading,setScoreTimelineLoading]=useState(true);
+  const scoreTimelineJob=useRef(0);
   useEffect(()=>{
+    const job=++scoreTimelineJob.current;
     const worker=new Worker(new URL("../scoreTimeline.worker.ts",import.meta.url),{type:"module"});
     setScoreTimelineLoading(true);
-    worker.onmessage=({data}:MessageEvent<ScoreTimeline>)=>{setScoreTimeline(data);setScoreTimelineLoading(false);worker.terminate();};
-    worker.onerror=()=>{setScoreTimeline([]);setScoreTimelineLoading(false);worker.terminate();};
-    worker.postMessage({draws,targetDrawIds:filtered.map(draw=>draw.id),settings:effectiveSettings,maxNumber:gameConfig.maxNumber});
-    return()=>worker.terminate();
-  },[draws,filtered,effectiveSettings,gameConfig.maxNumber]);
+    worker.onmessage=({data}:MessageEvent<ScoreTimeline>)=>{if(job===scoreTimelineJob.current){setScoreTimeline(data);setScoreTimelineLoading(false);}worker.terminate();};
+    worker.onerror=()=>{if(job===scoreTimelineJob.current){setScoreTimeline([]);setScoreTimelineLoading(false);}worker.terminate();};
+    worker.postMessage({draws,targetDrawIds:filtered.map(draw=>draw.id),settings:effectiveSettings,maxNumber:gameConfig.maxNumber,trainingWindow:scoreTrainingWindow});
+    return()=>{scoreTimelineJob.current++;worker.terminate();};
+  },[draws,filtered,effectiveSettings,gameConfig.maxNumber,scoreTrainingWindow]);
   const scoreCharts:[string,ScoreValueKey,string][]=[
     [t("dashboard.singleScoreHistory"),"single","#2f7fc1"],
     [t("dashboard.pairScoreHistory"),"pair","#e9822a"],
@@ -161,7 +165,7 @@ export default function Dashboard() {
   ];
   const stateColors: Record<string,string> = {HOT:"#d43d28",DUE:"#e9822a",DROUGHT:"#7b8794",NEUTRAL:"#1f8b63",COOL:"#2a68a8"};
   const scatterData: ScatterPoint[] = singles.map(item=>{
-    return {...item,technicalScore:round2(item.technicalScore),gapX:item.currentGap,frequencyY:item.frequencyRate*100,gapCensored:item.gap.gapCensored,completedGapCount:item.gap.completedGapCount,gapPercentile:item.gap.gapPercentile,label:item.rank<=5?pad(item.number):""};
+    return {...item,technicalScore:round2(item.technicalScore),gapX:item.currentGap,frequencyY:item.frequencyRate*100,gapCensored:item.gap.gapCensored,completedGapCount:item.gap.completedGapCount,gapPercentile:item.gap.gapPercentile,label:topFiveScores.has(item.number)?pad(item.number):""};
   });
   const gapScatterData=scatterData.sort((a,b)=>a.number-b.number);
   const scoreRange={min:Math.min(0,...gapScatterData.map(item=>item.technicalScore)),max:Math.max(100,...gapScatterData.map(item=>item.technicalScore))};
@@ -169,7 +173,7 @@ export default function Dashboard() {
   const portfolioCoverage=calculatePortfolioCoverage(displayedPortfolio,gameConfig.maxNumber);
   const periodOptions:[typeof filters.period,TranslationKey][]=[["last30","shell.last30"],["last50","selector.last50"],["last100","selector.last100"],["last1year","shell.lastYear"],["all","shell.allDraws"]];
   const viewOptions:[string,TranslationKey][]=[["Overview","selector.overview"],["Single Frequency","selector.singleFrequency"],["Gap & Trend","selector.gapTrend"],["Pairs","selector.pairs"],["Triples","selector.triples"],["Combinations","selector.combinations"],["Jackpot","selector.jackpot"]];
-  const presetOptions:[string,TranslationKey][]=[["Default","preset.default"],["Balanced","preset.balanced"],["Hot","preset.hot"],["Gap + Frequency","preset.gapFrequency"],["Pair","preset.pair"],["Triple","preset.triple"],["Custom","preset.custom"]];
+  const presetOptions:[string,TranslationKey][]=[["Default","preset.default"],["Balanced","preset.balanced"],["Hot","preset.hot"],["Legacy Gap","preset.legacyGap"],["Gap + Frequency","preset.gapFrequency"],["Pair","preset.pair"],["Triple","preset.triple"],["Custom","preset.custom"]];
   const analysisView=filters.analysisView==="Backtest"?"Overview":filters.analysisView;
   useEffect(()=>{if(filters.analysisView==="Backtest")updateDashboardFilters({analysisView:"Overview"});},[filters.analysisView,updateDashboardFilters]);
   const show = (kind:string) => {
@@ -194,6 +198,7 @@ export default function Dashboard() {
       <label>{t("dashboard.analysisView")}<Select value={analysisView} onChange={e=>updateDashboardFilters({analysisView:e.target.value})}>{viewOptions.map(([value,key])=><option value={value} key={value}>{t(key)}</option>)}</Select></label>
       <label>{t("dashboard.scoringPreset")}<Select value={filters.scoringPreset} onChange={e=>updateDashboardFilters({scoringPreset:e.target.value})}>{presetOptions.map(([value,key])=><option value={value} key={value}>{t(key)}</option>)}</Select></label>
       <label>{t("dashboard.predictionCount")}<Select value={filters.predictionCount} onChange={e=>updateDashboardFilters({predictionCount:Number(e.target.value) as 5|10|20})}>{[5,10,20].map(x=><option value={x} key={x}>Top {x}</option>)}</Select></label>
+      <label>{t("dashboard.scoreTrainingWindow")}<Select value={scoreTrainingWindow} onChange={e=>setScoreTrainingWindow(Number(e.target.value))}>{[30,50,100].map(x=><option value={x} key={x}>{x}</option>)}</Select></label>
     </div>
 
     <section className="overview-grid">
@@ -204,7 +209,7 @@ export default function Dashboard() {
     </section>
 
     <section className="chart-grid score-history-grid" aria-label={t("dashboard.scoreHistoryGroup")}>
-      {scoreCharts.map(([title,valueKey,color])=><ScoreHistoryChart key={valueKey} title={title} data={scoreTimeline} valueKey={valueKey} color={color} loading={scoreTimelineLoading}/>)}
+      {scoreCharts.map(([title,valueKey,color])=><ScoreHistoryChart key={valueKey} title={title} data={scoreTimeline} valueKey={valueKey} color={color} loading={scoreTimelineLoading} trainingWindow={scoreTrainingWindow}/>)}
       {(analysisView==="Overview"||analysisView==="Jackpot")&&<>
         <JackpotHistoryChart draws={filtered} valueKey="jackpot" title={t(selectedGame==="power655"?"common.jackpot1":"common.jackpot")} color="#e9822a"/>
         {selectedGame==="power655"&&<JackpotHistoryChart draws={filtered} valueKey="jackpot2" title={t("common.jackpot2")} color="#2f7fc1"/>}

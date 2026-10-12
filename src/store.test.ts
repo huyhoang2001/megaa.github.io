@@ -1,13 +1,13 @@
 import { describe,expect,it } from "vitest";
 import powerHistory from "./data/power655-history.json";
 import type { Draw } from "./domain";
-import { mergeBundledDraws, mergeBundledPowerDraws, mergeSettings, normalizeDashboardFilters, validDraws, validSettings } from "./store";
+import { mergeBundledDraws, mergeBundledPowerDraws, mergeSettings, normalizeDashboardFilters, useLotteryStore, validDraws, validSettings } from "./store";
 
 describe("Power history persistence migration",()=>{
   it("uses only the five selectable periods for saved filters",()=>{
     expect(normalizeDashboardFilters({period:"last10"}).period).toBe("last1year");
     expect(normalizeDashboardFilters({period:"last50"}).period).toBe("last50");
-    expect(normalizeDashboardFilters({scoringPreset:"Gap"}).scoringPreset).toBe("Default");
+    expect(normalizeDashboardFilters({scoringPreset:"Gap"}).scoringPreset).toBe("Legacy Gap");
   });
   it("upgrades the previous default digital roots",()=>{
     expect(mergeSettings({allowedDigitalRoots:[1,3,5,8]}).allowedDigitalRoots).toEqual([1,3,5,6,7,8,9]);
@@ -48,5 +48,25 @@ describe("Power history persistence migration",()=>{
     expect(validDraws([{...draw,date:"2026-02-30"}],45)).toBe(false);
     expect(validSettings({...mergeSettings(),candidatePoolSize:NaN})).toBe(false);
     expect(validSettings({...mergeSettings(),consensusWeights:{frequency:0,momentum:0,gap:0,association:0}})).toBe(false);
+    expect(validSettings({...mergeSettings(),minTotal:256},45)).toBe(false);
+    expect(validSettings({...mergeSettings(),minTotal:315},55)).toBe(true);
+  });
+  it("keeps settings and filter presets separate when switching games",()=>{
+    const original=useLotteryStore.getState();
+    try{
+      useLotteryStore.getState().setSelectedGame("mega645");
+      useLotteryStore.getState().updateSettings({minTotal:120});
+      useLotteryStore.getState().updateIndependentFilterConfig({preset:"Legacy Gap"});
+      useLotteryStore.getState().setSelectedGame("power655");
+      useLotteryStore.getState().updateSettings({minTotal:300});
+      useLotteryStore.getState().updateIndependentFilterConfig({preset:"Hot"});
+      useLotteryStore.getState().setSelectedGame("mega645");
+      expect(useLotteryStore.getState().settings.minTotal).toBe(120);
+      expect(useLotteryStore.getState().independentFilterConfig.preset).toBe("Legacy Gap");
+      useLotteryStore.getState().resetSettings();
+      useLotteryStore.getState().setSelectedGame("power655");
+      expect(useLotteryStore.getState().settings.minTotal).toBe(300);
+      expect(useLotteryStore.getState().independentFilterConfig.preset).toBe("Hot");
+    }finally{useLotteryStore.setState(original);}
   });
 });

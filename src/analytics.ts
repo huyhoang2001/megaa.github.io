@@ -228,11 +228,16 @@ export function calculateSingles(draws: Draw[], settings: AnalysisSettings,maxNu
   });
   for(const key of ["frequencySignal","momentumSignal","gapSignal","associationSignal"] as const){const orderedSignals=[...scored].sort((a,b)=>b[key].normalizedScore-a[key].normalizedScore||a.number-b.number);let rank=0,previous:number|undefined;const values=orderedSignals.map(item=>item[key].normalizedScore);orderedSignals.forEach(item=>{if(item[key].normalizedScore!==previous){rank++;previous=item[key].normalizedScore;}item[key].rank=rank;item[key].percentileRank=round2(percentileRank(values,item[key].normalizedScore)??50);});}
   const consensusWeights=settings.consensusWeights??{frequency:25,momentum:25,gap:25,association:25};
-  const withConsensus=scored.map(item=>{const components=[item.frequencySignal,item.momentumSignal,item.gapSignal,item.associationSignal];const consensus=weightedAverage(components.map(component=>component.percentileRank),[consensusWeights.frequency,consensusWeights.momentum,consensusWeights.gap,consensusWeights.association]);const agreement=components.filter(model=>model.rank<=10).length;const confidence:Confidence=agreement>=3&&totalDraws>=100&&item.associationSignal.confidence!=="LOW"?"HIGH":agreement>=2&&totalDraws>=50?"MEDIUM":"LOW";return {...item,models:{frequency:item.frequencySignal,momentum:item.momentumSignal,gap:item.gapSignal,association:item.associationSignal,consensus:signal(consensus,consensus,[`${agreement}/4 component models rank this number in the Top 10`],confidence)},modelAgreement:agreement,confidence,technicalScore:round2(consensus),rank:0};});
+  const componentTop10=(["frequencySignal","momentumSignal","gapSignal","associationSignal"] as const).map(key=>exactTopNumbers(scored.map(item=>({number:item.number,score:item[key].normalizedScore})),10));
+  const withConsensus=scored.map(item=>{const components=[item.frequencySignal,item.momentumSignal,item.gapSignal,item.associationSignal];const consensus=weightedAverage(components.map(component=>component.percentileRank),[consensusWeights.frequency,consensusWeights.momentum,consensusWeights.gap,consensusWeights.association]);const agreement=componentTop10.filter(top=>top.has(item.number)).length;const confidence:Confidence=agreement>=3&&totalDraws>=100&&item.associationSignal.confidence!=="LOW"?"HIGH":agreement>=2&&totalDraws>=50?"MEDIUM":"LOW";return {...item,models:{frequency:item.frequencySignal,momentum:item.momentumSignal,gap:item.gapSignal,association:item.associationSignal,consensus:signal(consensus,consensus,[`${agreement}/4 component models place this number in the Top 10`],confidence)},modelAgreement:agreement,confidence,technicalScore:round2(consensus),rank:0};});
   const ranked=[...withConsensus].sort((a,b)=>b.technicalScore-a.technicalScore||a.number-b.number);
   let consensusRank=0,previousConsensus:number|undefined;const consensusValues=ranked.map(item=>item.technicalScore);
   ranked.forEach(item=>{if(item.technicalScore!==previousConsensus){consensusRank++;previousConsensus=item.technicalScore;}item.rank=consensusRank;item.models.consensus.rank=consensusRank;item.models.consensus.percentileRank=round2(percentileRank(consensusValues,item.technicalScore)??50);});
   return withConsensus;
+}
+
+export function exactTopNumbers(items:{number:number;score:number}[],count:number){
+  return new Set([...items].sort((a,b)=>b.score-a.score||a.number-b.number).slice(0,count).map(item=>item.number));
 }
 
 export function calculatePairs(draws: Draw[],maxNumber=45): PairStats[] {
@@ -311,13 +316,13 @@ export function scoreCandidateCombinations(numberSets:number[][],singles:SingleN
   });
 }
 
-export function calculateScoreTimeline(draws:Draw[],settings:AnalysisSettings,maxNumber=45,targetDrawIds?:string[]){
+export function calculateScoreTimeline(draws:Draw[],settings:AnalysisSettings,maxNumber=45,targetDrawIds?:string[],trainingWindow=50){
   const ordered=[...draws].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
   if(!ordered.length)return [];
   const targets=targetDrawIds?new Set(targetDrawIds):undefined;
   const points=ordered.flatMap((draw,index)=>{
-    if(index<50||(targets&&!targets.has(draw.id)))return [];
-    const history=ordered.slice(index-50,index);
+    if(index<trainingWindow||(targets&&!targets.has(draw.id)))return [];
+    const history=ordered.slice(index-trainingWindow,index);
     const singles=calculateSingles(history,settings,maxNumber);
     const pairs=calculatePairs(history,maxNumber);
     const triples=calculateTriples(history,maxNumber);
@@ -451,8 +456,14 @@ export type BacktestPrediction=CandidateCombination&{count:number;rate:number;ma
 export type BacktestResultRow={targetId:string;date:string;predictions:BacktestPrediction[];actual:number[];bestMatches:number};
 
 export function getBacktestTrainingWindows(draws:Draw[],fromDate:string,toDate:string){
-  const priorDraws=Math.max(0,draws.filter(draw=>draw.date>=fromDate&&draw.date<=toDate).length-1);
-  return {priorDraws,windows:priorDraws>=100?[30,50,100]:priorDraws>=50?[30,50]:priorDraws>=30?[30]:[]};
+  const ordered=[...draws].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+  const target=ordered.filter(draw=>draw.date>=fromDate&&draw.date<=toDate).at(-1);
+  const targetIndex=target?ordered.indexOf(target):-1;
+  const priorDraws=Math.max(0,targetIndex);
+  const windows=[30,50,100].filter(window=>priorDraws>=window);
+  const targets=ordered.map((draw,index)=>({draw,index})).filter(({draw})=>draw.date>=fromDate&&draw.date<=toDate);
+  const rolling=Object.fromEntries([30,50,100].map(window=>[window,{eligibleTargetCount:targets.filter(({index})=>index>=window).length,skippedTrainingCount:targets.filter(({index})=>index<window).length}]));
+  return {priorDraws,windows,rolling};
 }
 
 export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:BacktestRangeOptions){
@@ -478,15 +489,16 @@ export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:Bac
     best=Math.max(best,bestMatches);
     rows.push({targetId,date,predictions,actual,bestMatches});
   };
-  const range=draws.filter(draw=>draw.date>=options.fromDate&&draw.date<=options.toDate);
+  const ordered=[...draws].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+  const range=ordered.filter(draw=>draw.date>=options.fromDate&&draw.date<=options.toDate);
   const manualProposedSets=options.manualProposedSets;
   const targets=range.slice(-1);
-  targets.forEach((target,index)=>{
-    const targetIndex=range.indexOf(target);
-    const history=range.slice(0,targetIndex).slice(-trainingDraws);
+  targets.forEach(target=>{
+    const targetIndex=ordered.indexOf(target);
+    const history=ordered.slice(Math.max(0,targetIndex-trainingDraws),targetIndex);
     if(history.length===trainingDraws)evaluate(history,target.numbers,target.id,target.date,manualProposedSets);
   });
-  return {distribution,average:rows.length?totalMatches/rows.length:0,best,tests:rows.length,rows};
+  return {distribution,average:rows.length?totalMatches/rows.length:0,best,tests:rows.length,rows,skippedTrainingCount:targets.length-rows.length,trainingWindow:trainingDraws};
 }
 
 export function runPortfolioRollingBacktest(draws:Draw[],settings:AnalysisSettings,options:{fromDate:string;toDate:string;predictionCount:5|10|20;maxNumber:number;trainingDraws?:number}){
@@ -525,11 +537,12 @@ export function runRollingBacktest(draws:Draw[],settings:AnalysisSettings,target
   const rows=[];
   for(let index=start;index<draws.length;index++){
     const training=draws.slice(0,index),actual=draws[index].numbers;
-    const ranked=[...calculateSingles(training,settings,maxNumber)].sort((a,b)=>a.rank-b.rank);
+    const ranked=[...calculateSingles(training,settings,maxNumber)].sort((a,b)=>b.technicalScore-a.technicalScore||a.number-b.number);
     const shuffled=Array.from({length:maxNumber},(_,i)=>i+1);
     for(let j=shuffled.length-1;j>0;j--){const k=Math.floor(random()*(j+1));[shuffled[j],shuffled[k]]=[shuffled[k],shuffled[j]];}
-    const actualRanks=actual.map(number=>ranked.find(item=>item.number===number)?.rank??maxNumber);
+    const positions=new Map(ranked.map((item,position)=>[item.number,position+1]));
+    const actualRanks=actual.map(number=>positions.get(number)??maxNumber);
     rows.push({targetId:draws[index].id,top5:actualRanks.filter(rank=>rank<=5).length,top10:actualRanks.filter(rank=>rank<=10).length,top15:actualRanks.filter(rank=>rank<=15).length,meanActualRank:mean(actualRanks),randomTop10:actual.filter(number=>shuffled.slice(0,10).includes(number)).length});
   }
-  return {rows,tests:rows.length,modelTop10HitRate:rows.length?mean(rows.map(row=>row.top10/6)):0,randomTop10HitRate:rows.length?mean(rows.map(row=>row.randomTop10/6)):0,meanActualRank:rows.length?mean(rows.map(row=>row.meanActualRank)):0,seed};
+  return {rows,tests:rows.length,modelTop10HitRate:rows.length?mean(rows.map(row=>row.top10/6)):0,randomTop10HitRate:rows.length?mean(rows.map(row=>row.randomTop10/6)):0,meanActualRank:rows.length?mean(rows.map(row=>row.meanActualRank)):0,seed,metricsVersion:2,tieBreak:"score desc, number asc"};
 }
