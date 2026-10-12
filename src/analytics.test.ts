@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, digitalRoot, filterCombinationsByNumbers, filterCombinationsByScores, filterCompleteCalendarMonths, filterDraws, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, round2, runRollingBacktest, validCombinationScoreRanges } from "./analytics";
+import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculatePortfolioCoverage, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, digitalRoot, filterCombinationsByNumbers, filterCombinationsByScores, filterCompleteCalendarMonths, filterDraws, generateCandidateUniverse, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, percentileRank, round2, runPortfolioRollingBacktest, runRollingBacktest, scoreCandidateCombinations, selectFilteredPortfolio, selectPortfolio, validCombinationScoreRanges, weightedAverage } from "./analytics";
 import type { CombinationScoreRanges } from "./analytics";
 import { DEFAULT_SETTINGS, INSIDE_SET } from "./domain";
 import type { Draw } from "./domain";
@@ -71,17 +71,17 @@ describe("analytics", () => {
     expect(timeline.at(-1)?.ma20).toBe(round2(timeline.slice(-20).reduce((sum,item)=>sum+item.historicalFrequency,0)/20));
   });
   it("builds all five score timelines with a 20-period moving average",()=>{
-    const timeline=calculateScoreTimeline(draws,DEFAULT_SETTINGS);
-    expect(timeline).toHaveLength(draws.length);
+    const timeline=calculateScoreTimeline((history.draws as Draw[]).slice(-75),DEFAULT_SETTINGS);
+    expect(timeline).toHaveLength(25);
     expect(timeline.every(point=>[point.single,point.pair,point.triple,point.structure,point.total,point.singleMa20,point.pairMa20,point.tripleMa20,point.structureMa20,point.totalMa20].every(Number.isFinite))).toBe(true);
-    expect(timeline.at(-1)?.singleMa20).toBe(round2(timeline.reduce((sum,point)=>sum+point.single,0)/timeline.length));
+    expect(timeline.at(-1)?.singleMa20).toBe(round2(timeline.slice(-20).reduce((sum,point)=>sum+point.single,0)/20));
   });
-  it("recalculates every score point from the selected period",()=>{
-    const period=draws.slice(-6);
-    const timeline=calculateScoreTimeline(period,DEFAULT_SETTINGS);
-    expect(timeline.map(point=>point.id)).toEqual(period.map(draw=>draw.id));
-    expect(timeline).toHaveLength(period.length);
-    expect(timeline.every(point=>Number.isFinite(point.total)&&Number.isFinite(point.totalMa20))).toBe(true);
+  it("uses 50 earlier draws and omits targets with insufficient history",()=>{
+    const source=(history.draws as Draw[]).slice(-56);
+    const targets=source.slice(-6);
+    const timeline=calculateScoreTimeline(source,DEFAULT_SETTINGS,45,targets.map(draw=>draw.id));
+    expect(timeline.map(point=>point.id)).toEqual(targets.map(draw=>draw.id));
+    expect(calculateScoreTimeline(draws,DEFAULT_SETTINGS)).toEqual([]);
   });
   it("groups draw density by calendar month", () => {
     const real=history.draws as Draw[];
@@ -209,8 +209,60 @@ describe("analytics", () => {
   it("builds normalized consensus signals and supported lift",()=>{
     const singles=calculateSingles(draws,DEFAULT_SETTINGS);
     expect(singles.every(item=>item.models.consensus.normalizedScore>=0&&item.models.consensus.normalizedScore<=100)).toBe(true);
-    expect(new Set(singles.map(item=>item.models.consensus.rank)).size).toBe(45);
+    expect(singles.every(item=>singles.filter(other=>other.technicalScore===item.technicalScore).every(other=>other.rank===item.rank&&other.models.consensus.percentileRank===item.models.consensus.percentileRank))).toBe(true);
     expect(calculatePairs(draws).find(pair=>pair.key==="01-02")?.lift).toBeGreaterThan(1);
+  });
+  it("uses bounded midranks and does not invent completed gaps",()=>{
+    expect(percentileRank([1,2],3)).toBe(100);
+    expect(percentileRank([2,2,2],2)).toBe(50);
+    expect(percentileRank([],3)).toBeNull();
+    const missing=calculateGapDistribution(draws,55);
+    expect(missing.gapCensored).toBe(true);
+    expect(missing.currentGap).toBe(draws.length);
+    expect(missing.meanGap).toBeNull();
+    expect(missing.maxCompletedGap).toBeNull();
+    expect(calculateGapDistribution(draws,1).currentGap).toBe(0);
+  });
+  it("keeps weighted scores scale-invariant and rejects invalid totals",()=>{
+    expect(weightedAverage([20,80],[1,3])).toBe(weightedAverage([20,80],[10,30]));
+    expect(()=>weightedAverage([20,80],[0,0])).toThrow(RangeError);
+    expect(()=>weightedAverage([20,80],[1,-1])).toThrow(RangeError);
+  });
+  it("filters the full candidate universe without changing main proposals",()=>{
+    const real=(history.draws as Draw[]).slice(-50);
+    const settings=settingsForPreset(DEFAULT_SETTINGS,"Balanced");
+    const singles=calculateSingles(real,settings),pairs=calculatePairs(real),triples=calculateTriples(real);
+    const universe=generateCandidateUniverse(singles,pairs,triples,settings,real);
+    const main=selectPortfolio(universe,settings,20);
+    const original=main.map(item=>[item.numbers.join("-"),item.totalScore]);
+    const scores=scoreCandidateCombinations(universe.map(item=>item.numbers),singles,pairs,triples,settings,real);
+    const target=universe.find(item=>!main.some(pick=>pick.numbers.join("-")===item.numbers.join("-")))!;
+    expect(target).toBeDefined();
+    const narrow:CombinationScoreRanges={singleScore:{min:String(target.singleScore),max:String(target.singleScore)},pairScore:{min:String(target.pairScore),max:String(target.pairScore)},tripleScore:{min:String(target.tripleScore),max:String(target.tripleScore)},structureScore:{min:String(target.structureScore),max:String(target.structureScore)},totalScore:{min:String(target.totalScore),max:String(target.totalScore)}};
+    const result=selectFilteredPortfolio(universe,scores,main,narrow,settings,20);
+    expect(result.rows.some(row=>row.proposal.numbers.join("-")===target.numbers.join("-"))).toBe(true);
+    expect(main.map(item=>[item.numbers.join("-"),item.totalScore])).toEqual(original);
+    expect(scores[0]).not.toBe(universe[0]);
+  });
+  it("measures portfolio coverage only from displayed tickets",()=>{
+    const real=(history.draws as Draw[]).slice(-50);
+    const main=generateCandidates(calculateSingles(real,DEFAULT_SETTINGS),calculatePairs(real),calculateTriples(real),DEFAULT_SETTINGS,real);
+    const coverage=calculatePortfolioCoverage(main.slice(0,5),45);
+    expect(coverage.ticketCount).toBe(5);
+    expect(coverage.numberCounts.reduce((sum,item)=>sum+item.count,0)).toBe(30);
+    expect(coverage.uniquePairs).toBeLessThanOrEqual(75);
+    expect(coverage.uniqueTriples).toBeLessThanOrEqual(100);
+  });
+  it("keeps pre-start training and includes zero-ticket targets in rolling denominators",()=>{
+    const real=(history.draws as Draw[]).slice(-52);
+    const result=runPortfolioRollingBacktest(real,DEFAULT_SETTINGS,{fromDate:real[50].date,toDate:real[51].date,predictionCount:5,maxNumber:45});
+    expect(result.evaluatedTargetCount).toBe(2);
+    expect(result.skippedTrainingCount).toBe(0);
+    expect(result.distribution.reduce((sum,count)=>sum+count,0)).toBe(2);
+    const constrained=runPortfolioRollingBacktest(real,{...DEFAULT_SETTINGS,allowedDigitalRoots:[]},{fromDate:real[50].date,toDate:real[50].date,predictionCount:5,maxNumber:45});
+    expect(constrained.evaluatedTargetCount).toBe(1);
+    expect(constrained.minimumTicketCount).toBe(0);
+    expect(constrained.distribution[0]).toBe(1);
   });
   it("uses a reproducible random baseline without future leakage",()=>{
     const a=runRollingBacktest(draws,{...DEFAULT_SETTINGS,backtestMinTrainingDraws:6},4,123);

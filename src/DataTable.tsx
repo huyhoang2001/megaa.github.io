@@ -34,12 +34,13 @@ type DataTableProps<TData>={
   maxRows?:number;
   onReset?:()=>void;
   hideRowCount?:boolean;
+  initialSorting?:SortingState;
 };
 
 const excelFilter:FilterFn<unknown>=(row,columnId,value)=>matchesColumnFilter(row.getValue(columnId),String(value??""));
 
-export default function DataTable<TData>({data,columns,labels,maxRows,onReset,hideRowCount=false}:DataTableProps<TData>){
-  const [sorting,setSorting]=useState<SortingState>([]);
+export default function DataTable<TData>({data,columns,labels,maxRows,onReset,hideRowCount=false,initialSorting=[]}:DataTableProps<TData>){
+  const [sorting,setSorting]=useState<SortingState>(initialSorting);
   const [columnFilters,setColumnFilters]=useState<ColumnFiltersState>([]);
   const [activeColumnId,setActiveColumnId]=useState<string|null>(null);
   const table=useReactTable({

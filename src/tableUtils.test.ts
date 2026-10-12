@@ -12,5 +12,7 @@ describe("Excel-style column filters",()=>{
     expect(matchesColumnFilter(18,"<=17")).toBe(false);
     expect(matchesColumnFilter(18,"10..18")).toBe(true);
     expect(matchesColumnFilter(18,"19..30")).toBe(false);
+    expect(matchesColumnFilter(null,">=0")).toBe(false);
+    expect(matchesColumnFilter(null,"0..100")).toBe(false);
   });
 });

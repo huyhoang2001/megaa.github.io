@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { CalendarDays, Download, Info, LoaderCircle, Pencil, Play, Plus, RotateCcw, Search, Settings2, SlidersHorizontal, Trash2, Upload } from "lucide-react";
 import { z } from "zod";
 import type { ColumnDef } from "@tanstack/react-table";
-import { combinationScoreKeys, filterCombinationsByNumbers, filterCombinationsByScores, getBacktestTrainingWindows, pad, parseCompactCombinations, validCombinationScoreRanges } from "../analytics";
+import { calculateSingles, calculatePairs, calculateTriples, combinationScoreKeys, filterCombinationsByNumbers, getBacktestTrainingWindows, pad, parseCompactCombinations, scoreCandidateCombinations, selectFilteredPortfolio, validCombinationScoreRanges } from "../analytics";
 import type { CombinationScoreRanges } from "../analytics";
 import { LOTTERY_GAMES } from "../domain";
 import type { CandidateCombination, Draw, PairStats, SingleNumberStats, TripleStats } from "../domain";
@@ -18,6 +18,7 @@ import type { TranslationKey } from "../i18n";
 import DataTable from "../DataTable";
 
 type BacktestPayload={result:ReturnType<typeof import("../analytics").backtestRange>;rolling:ReturnType<typeof import("../analytics").runRollingBacktest>;manualMode?:boolean};
+type PortfolioRollingResult=ReturnType<typeof import("../analytics").runPortfolioRollingBacktest>;
 type BacktestTableRow={rank:number;combination:string;rate:number;sum:number;root:number;evenOdd:string;insideOutside:string;single:number;pair:number;triple:number;structure:number;totalScore:number;matches:number;actual:number[];evaluation:string};
 const backtestCache=new Map<string,BacktestPayload>();
 
@@ -36,9 +37,8 @@ function PeriodControl(){
   const {t}=useI18n();
   const {dashboardFilters,updateDashboardFilters}=useLotteryStore();
   const periods:[typeof dashboardFilters.period,TranslationKey][]=[
-    ["last10","shell.last10"],["last20","selector.last20"],["last30","shell.last30"],
-    ["last50","selector.last50"],["last100","selector.last100"],
-    ["last6months","selector.last6Months"],["last1year","shell.lastYear"],["all","shell.allDraws"],
+    ["last30","shell.last30"],["last50","selector.last50"],["last100","selector.last100"],
+    ["last1year","shell.lastYear"],["all","shell.allDraws"],
   ];
   return <label className="page-preset-control page-period-control"><span>{t("dashboard.period")}</span><Select value={dashboardFilters.period} onChange={event=>updateDashboardFilters({period:event.target.value as typeof dashboardFilters.period})}>{periods.map(([value,key])=><option key={value} value={value}>{t(key)}</option>)}</Select></label>;
 }
@@ -46,7 +46,7 @@ function PeriodControl(){
 function ScoringPresetControl(){
   const {t}=useI18n();
   const {dashboardFilters,updateDashboardFilters}=useLotteryStore();
-  const presets:[string,TranslationKey][]=[["Default","preset.default"],["Balanced","preset.balanced"],["Hot","preset.hot"],["Gap","preset.gap"],["Pair","preset.pair"],["Triple","preset.triple"],["Custom","preset.custom"]];
+  const presets:[string,TranslationKey][]=[["Default","preset.default"],["Balanced","preset.balanced"],["Hot","preset.hot"],["Gap","preset.gap"],["Gap + Frequency","preset.gapFrequency"],["Pair","preset.pair"],["Triple","preset.triple"],["Custom","preset.custom"]];
   return <label className="page-preset-control"><span>{t("dashboard.scoringPreset")}</span><Select value={dashboardFilters.scoringPreset} onChange={event=>updateDashboardFilters({scoringPreset:event.target.value})}>{presets.map(([value,key])=><option key={value} value={value}>{t(key)}</option>)}</Select></label>;
 }
 
@@ -92,15 +92,25 @@ export function SinglesPage() {
   const columns=useMemo<ColumnDef<SingleNumberStats>[]>(()=>[
     {accessorKey:"rank",header:t("common.rank"),cell:info=>`#${info.getValue<number>()}`},
     {accessorKey:"number",header:t("common.number"),cell:info=><NumberBall number={info.getValue<number>()} small/>},
-    {accessorKey:"totalCount",header:t("common.count")},
-    {id:"rate",accessorFn:row=>row.frequencyRate*100,header:t("pages.rate"),cell:info=>`${info.getValue<number>().toFixed(2)}%`},
+    {accessorKey:"totalCount",header:t("pages.occurrences")},
+    {id:"rate",accessorFn:row=>row.frequencyRate*100,header:t("pages.frequencyPercent"),cell:info=>`${info.getValue<number>().toFixed(2)}%`},
+    {id:"last10",accessorFn:row=>row.rolling.last10,header:t("pages.last10")},
+    {id:"last30",accessorFn:row=>row.rolling.last30,header:t("common.last30")},
+    {id:"last50",accessorFn:row=>row.rolling.last50,header:t("pages.last50")},
+    {accessorKey:"currentGap",header:t("pages.gap"),cell:info=>`${info.row.original.gap.gapCensored?"≥":""}${info.getValue<number>()}`},
+    {accessorKey:"averageGap",header:t("pages.avgGap"),cell:info=>info.getValue<number|null>()?.toFixed(1)??"—"},
+    {accessorKey:"gapRatio",header:t("pages.gapRatio"),cell:info=>info.getValue<number|null>()?.toFixed(2)??"—"},
+    {id:"gapPercentile",accessorFn:row=>row.gap.gapPercentile,header:t("pages.gapPercentile"),cell:info=>info.getValue<number|null>()?.toFixed(1)??"—"},
+    {id:"completedGaps",accessorFn:row=>row.gap.completedGapCount,header:t("pages.completedGaps")},
+    {id:"gapScore",accessorFn:row=>row.gap.gapScore,header:t("pages.gapScore"),cell:info=>info.getValue<number>().toFixed(2)},
+    {accessorKey:"technicalScore",header:t("pages.aggregateScore"),cell:info=><ScoreBadge score={info.getValue<number>()}/>},
+    {id:"support",accessorFn:row=>row.gap.completedGapCount>=10?"HIGH":row.gap.completedGapCount>=4?"MEDIUM":"LOW",header:t("pages.dataSupport")},
+    {accessorKey:"maxGap",header:t("pages.maxGap"),cell:info=>info.getValue<number|null>()??"—"},
     {id:"inside",accessorFn:row=>row.inside?t("common.inside"):t("common.outside"),header:t("pages.io")},
     {id:"parity",accessorFn:row=>row.parity==="EVEN"?t("common.even"):t("common.odd"),header:t("pages.eo")},
-    {accessorKey:"currentGap",header:t("pages.gap")},{accessorKey:"averageGap",header:t("pages.avgGap"),cell:info=>info.getValue<number>().toFixed(1)},{accessorKey:"maxGap",header:t("pages.maxGap")},{accessorKey:"countLast10",header:t("pages.last10")},{accessorKey:"countLast30",header:t("common.last30")},{accessorKey:"trend30",header:t("pages.trend"),cell:info=>info.getValue<number>().toFixed(2)},
     {accessorKey:"state",header:t("pages.state"),cell:info=>{const state=info.getValue<SingleNumberStats["state"]>();return <span className={`state state-${state.toLowerCase()}`}>{t(`state.${state}` as TranslationKey)}</span>;}},
-    {accessorKey:"technicalScore",header:t("common.score"),cell:info=><ScoreBadge score={info.getValue<number>()}/>},
   ],[t]);
-  return <><PageTitle title={t("pages.singlesTitle")} subtitle={t("pages.singlesSubtitle",{count:filtered.length})} actions={<><PeriodControl/><ScoringPresetControl/></>}/><DataTable data={singles} columns={columns} labels={labels}/></>;
+  return <><PageTitle title={t("pages.singlesTitle")} subtitle={t("pages.singlesSubtitle",{count:filtered.length})} actions={<><PeriodControl/><ScoringPresetControl/></>}/><DataTable data={singles} columns={columns} labels={labels} initialSorting={[{id:"rank",desc:false}]}/></>;
 }
 
 export function PairsPage(){
@@ -124,25 +134,45 @@ export function CombinationsPage(){
   const {t}=useI18n();
   const labels=useTableLabels();
   const [predictionCount,setPredictionCount]=useState<20|50>(20);
-  const {predictions}=useAnalytics(predictionCount);
+  const {predictions,candidateUniverse,filtered}=useAnalytics(predictionCount);
+  const {settings,independentFilterConfig,updateIndependentFilterConfig,selectedGame}=useLotteryStore();
   const [query,setQuery]=useState("");
   const [filterOpen,setFilterOpen]=useState(false);
-  const [draftRanges,setDraftRanges]=useState(blankScoreRanges);
-  const [appliedRanges,setAppliedRanges]=useState(blankScoreRanges);
+  const [draftRanges,setDraftRanges]=useState(()=>independentFilterConfig.ranges);
+  const [draftPreset,setDraftPreset]=useState(independentFilterConfig.preset);
+  const [draftCount,setDraftCount]=useState<20|50>(independentFilterConfig.resultCount);
+  const [draftSort,setDraftSort]=useState<"proposal"|"filter">(independentFilterConfig.sort);
   const [rangeError,setRangeError]=useState(false);
-  const hasScoreFilters=combinationScoreKeys.some(key=>appliedRanges[key].min!==""||appliedRanges[key].max!=="");
-  const visiblePredictions=filterCombinationsByScores(filterCombinationsByNumbers(predictions.slice(0,predictionCount),query),appliedRanges);
-  const applyRanges=(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();if(!validCombinationScoreRanges(draftRanges)){setRangeError(true);return;}setAppliedRanges(draftRanges);setRangeError(false);setFilterOpen(false);};
-  const clearRanges=()=>{setDraftRanges(blankScoreRanges());setAppliedRanges(blankScoreRanges());setRangeError(false);};
+  const hasScoreFilters=independentFilterConfig.enabled;
+  const activeRangeSummary=combinationScoreKeys.flatMap(key=>{const range=independentFilterConfig.ranges[key];return range.min!==""||range.max!==""?[`${t(scoreLabels[key])}: ${range.min||"0"}–${range.max||"100"}`]:[];}).join(" · ");
+  const visiblePredictions=filterCombinationsByNumbers(predictions.slice(0,predictionCount),query);
+  const filteredPortfolio=useMemo(()=>{
+    if(!independentFilterConfig.enabled)return null;
+    const filterSettings=settingsForPreset(settings,independentFilterConfig.preset);
+    const maxNumber=LOTTERY_GAMES[selectedGame].maxNumber;
+    const singles=calculateSingles(filtered,filterSettings,maxNumber);
+    const pairs=calculatePairs(filtered,maxNumber);
+    const triples=calculateTriples(filtered,maxNumber);
+    const scores=scoreCandidateCombinations(candidateUniverse.map(item=>item.numbers),singles,pairs,triples,filterSettings,filtered);
+    return selectFilteredPortfolio(candidateUniverse,scores,predictions,independentFilterConfig.ranges,filterSettings,independentFilterConfig.resultCount,independentFilterConfig.sort);
+  },[independentFilterConfig,settings,selectedGame,filtered,candidateUniverse,predictions]);
+  const applyRanges=(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();if(!validCombinationScoreRanges(draftRanges)){setRangeError(true);return;}updateIndependentFilterConfig({enabled:true,preset:draftPreset,ranges:draftRanges,resultCount:draftCount,sort:draftSort});setRangeError(false);setFilterOpen(false);};
+  const clearRanges=()=>{const ranges=blankScoreRanges();setDraftRanges(ranges);updateIndependentFilterConfig({enabled:false,ranges});setRangeError(false);};
   const columns=useMemo<ColumnDef<CandidateCombination>[]>(()=>[
-    {accessorKey:"rank",header:t("common.rank")},{id:"combination",accessorFn:row=>row.numbers.map(pad).join(" - "),header:t("common.combination")},{accessorKey:"total",header:t("pages.sum")},{accessorKey:"digitalRoot",header:t("pages.root")},{id:"evenOdd",accessorFn:row=>`${row.evenCount}/${row.oddCount}`,header:t("common.evenOdd")},{id:"insideOutside",accessorFn:row=>`${row.insideCount}/${row.outsideCount}`,header:t("common.insideOutside")},{accessorKey:"singleScore",header:t("pages.single"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"pairScore",header:t("common.pair"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"tripleScore",header:t("common.triple"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"structureScore",header:t("prediction.structure"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"totalScore",header:t("pages.totalScore"),cell:info=>info.getValue<number>().toFixed(2)},
+    {accessorKey:"rank",header:t("pages.mainRank")},{id:"combination",accessorFn:row=>row.numbers.map(pad).join(" - "),header:t("common.combination")},{accessorKey:"total",header:t("pages.sum")},{accessorKey:"digitalRoot",header:t("pages.root")},{id:"evenOdd",accessorFn:row=>`${row.evenCount}/${row.oddCount}`,header:t("common.evenOdd")},{id:"insideOutside",accessorFn:row=>`${row.insideCount}/${row.outsideCount}`,header:t("common.insideOutside")},{accessorKey:"singleScore",header:t("pages.single"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"pairScore",header:t("common.pair"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"tripleScore",header:t("common.triple"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"structureScore",header:t("prediction.structure"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"totalScore",header:t("pages.proposalScore"),cell:info=>info.getValue<number>().toFixed(2)},
+    {id:"portfolioOverlap",accessorFn:row=>Math.max(0,...predictions.filter(other=>other!==row).map(other=>row.numbers.filter(number=>other.numbers.includes(number)).length)),header:t("pages.portfolioOverlap")},{accessorKey:"confidence",header:t("pages.dataSupport")},
+  ],[t,predictions]);
+  const filteredColumns=useMemo<ColumnDef<NonNullable<typeof filteredPortfolio>["rows"][number]>[]>(()=>[
+    {accessorKey:"filteredRank",header:t("common.rank")},{accessorKey:"mainRank",header:t("pages.mainRank"),cell:info=>info.getValue<number|null>()??t("pages.outsideMain")},{id:"candidateRank",accessorFn:row=>row.proposal.candidateRank??"",header:t("pages.candidateRank")},{id:"combination",accessorFn:row=>row.proposal.numbers.map(pad).join(" - "),header:t("common.combination")},{id:"proposalScore",accessorFn:row=>row.proposal.totalScore,header:t("pages.proposalScore"),cell:info=>info.getValue<number>().toFixed(2)},
+    ...combinationScoreKeys.map(key=>({id:key,accessorFn:(row:NonNullable<typeof filteredPortfolio>["rows"][number])=>row.filter[key],header:t(scoreLabels[key]),cell:(info:{getValue:()=>unknown})=>Number(info.getValue()).toFixed(2)})),
   ],[t]);
   return <>
     <PageTitle title={t("pages.combinationsTitle")} subtitle={t("pages.combinationsSubtitle")} actions={<><PeriodControl/><ScoringPresetControl/><label className="page-preset-control"><span>{t("dashboard.predictionCount")}</span><Select value={predictionCount} onChange={event=>setPredictionCount(Number(event.target.value) as 20|50)}><option value={20}>Top 20</option><option value={50}>Top 50</option></Select></label></>}/>
     <Card className="notice">{t("pages.combinationsNotice")}</Card>
-    <div className="combination-search"><div className="combination-search-controls"><label><span>{t("pages.searchCombinationLabel")}</span><div className="combination-search-field"><Search size={15} aria-hidden="true"/><input type="search" inputMode="numeric" value={query} onChange={event=>setQuery(event.target.value)} placeholder={t("pages.searchCombination")} aria-describedby="combination-search-count"/></div></label><Button type="button" className={`secondary combination-filter-toggle${hasScoreFilters?" active":""}`} aria-expanded={filterOpen} aria-controls="combination-score-filters" onClick={()=>{if(!filterOpen){setDraftRanges(appliedRanges);setRangeError(false);}setFilterOpen(!filterOpen);}}><SlidersHorizontal size={16}/>{t("pages.customFilters")}</Button></div><span id="combination-search-count" aria-live="polite">{t("pages.combinationMatches",{count:visiblePredictions.length,total:Math.min(predictions.length,predictionCount)})}</span></div>
-    {filterOpen&&<form id="combination-score-filters" className="combination-score-filters" onSubmit={applyRanges} noValidate><div className="combination-score-grid">{combinationScoreKeys.map(key=><fieldset key={key}><legend>{t(scoreLabels[key])}</legend><label>{t("pages.scoreMinimum")}<input type="number" min="0" max="100" step="any" value={draftRanges[key].min} onChange={event=>{setDraftRanges(current=>({...current,[key]:{...current[key],min:event.target.value}}));setRangeError(false);}}/></label><label>{t("pages.scoreMaximum")}<input type="number" min="0" max="100" step="any" value={draftRanges[key].max} onChange={event=>{setDraftRanges(current=>({...current,[key]:{...current[key],max:event.target.value}}));setRangeError(false);}}/></label></fieldset>)}</div>{rangeError&&<p className="combination-filter-error" role="alert">{t("pages.invalidScoreRange")}</p>}<div className="combination-filter-actions"><Button type="button" className="secondary" onClick={clearRanges}>{t("pages.clearScoreFilters")}</Button><Button type="submit">{t("pages.applyScoreFilters")}</Button></div></form>}
-    <DataTable data={visiblePredictions} columns={columns} labels={labels} onReset={()=>{setQuery("");clearRanges();}}/>
+    <div className="combination-search"><div className="combination-search-controls"><label><span>{t("pages.searchCombinationLabel")}</span><div className="combination-search-field"><Search size={15} aria-hidden="true"/><input type="search" inputMode="numeric" value={query} onChange={event=>setQuery(event.target.value)} placeholder={t("pages.searchCombination")} aria-describedby="combination-search-count"/></div></label><Button type="button" className={`secondary combination-filter-toggle${hasScoreFilters?" active":""}`} aria-expanded={filterOpen} aria-controls="combination-score-filters" onClick={()=>{if(!filterOpen){setDraftRanges(independentFilterConfig.ranges);setDraftPreset(independentFilterConfig.preset);setDraftCount(independentFilterConfig.resultCount);setDraftSort(independentFilterConfig.sort);setRangeError(false);}setFilterOpen(!filterOpen);}}><SlidersHorizontal size={16}/>{t("pages.customFilters")}</Button></div><span id="combination-search-count" aria-live="polite">{t("pages.combinationMatches",{count:visiblePredictions.length,total:Math.min(predictions.length,predictionCount)})}</span></div>
+    {filterOpen&&<form id="combination-score-filters" className="combination-score-filters" onSubmit={applyRanges} noValidate><div className="combination-score-grid"><label>{t("dashboard.scoringPreset")}<Select value={draftPreset} onChange={event=>setDraftPreset(event.target.value)}>{["Default","Balanced","Hot","Gap","Gap + Frequency","Pair","Triple","Custom"].map(preset=><option key={preset} value={preset}>{t(({"Gap + Frequency":"preset.gapFrequency"} as Record<string,TranslationKey>)[preset]??(`preset.${preset.toLowerCase()}` as TranslationKey))}</option>)}</Select></label><label>{t("dashboard.predictionCount")}<Select value={draftCount} onChange={event=>setDraftCount(Number(event.target.value) as 20|50)}><option value={20}>Top 20</option><option value={50}>Top 50</option></Select></label><label>{t("pages.filterSort")}<Select value={draftSort} onChange={event=>setDraftSort(event.target.value as "proposal"|"filter")}><option value="proposal">{t("pages.sortProposal")}</option><option value="filter">{t("pages.sortFilter")}</option></Select></label>{combinationScoreKeys.map(key=><fieldset key={key}><legend>{t(scoreLabels[key])}</legend><label>{t("pages.scoreMinimum")}<input type="number" min="0" max="100" step="any" value={draftRanges[key].min} onChange={event=>{setDraftRanges(current=>({...current,[key]:{...current[key],min:event.target.value}}));setRangeError(false);}}/></label><label>{t("pages.scoreMaximum")}<input type="number" min="0" max="100" step="any" value={draftRanges[key].max} onChange={event=>{setDraftRanges(current=>({...current,[key]:{...current[key],max:event.target.value}}));setRangeError(false);}}/></label></fieldset>)}</div>{rangeError&&<p className="combination-filter-error" role="alert">{t("pages.invalidScoreRange")}</p>}<div className="combination-filter-actions"><Button type="button" className="secondary" onClick={clearRanges}>{t("pages.clearScoreFilters")}</Button><Button type="submit">{t("pages.applyScoreFilters")}</Button></div></form>}
+    <DataTable data={visiblePredictions} columns={columns} labels={labels} onReset={()=>setQuery("")}/>
+    {filteredPortfolio&&<Card><CardHeader title={t("pages.filteredResults")} subtitle={`${t("pages.filteredCount",{count:filteredPortfolio.rows.length,total:filteredPortfolio.passing})} · ${independentFilterConfig.preset}${activeRangeSummary?` · ${activeRangeSummary}`:""}`}/><DataTable data={filteredPortfolio.rows} columns={filteredColumns} labels={labels} onReset={clearRanges}/></Card>}
   </>;
 }
 export function BacktestPage(){
@@ -164,11 +194,16 @@ export function BacktestPage(){
   const [data,setData]=useState<BacktestPayload|null>(null);
   const [running,setRunning]=useState(false);
   const [failed,setFailed]=useState(false);
+  const [portfolioData,setPortfolioData]=useState<PortfolioRollingResult|null>(null);
+  const [portfolioRunning,setPortfolioRunning]=useState(false);
+  const [portfolioFailed,setPortfolioFailed]=useState(false);
   const workerRef=useRef<Worker|null>(null);
+  const portfolioWorkerRef=useRef<Worker|null>(null);
   const lastManualSetsRef=useRef<number[][]|undefined>(undefined);
   useEffect(()=>{const next=defaultRange();setFromDate(next.from);setToDate(next.to);setData(null);setFailed(false);lastManualSetsRef.current=undefined;},[selectedGame]);
-  useEffect(()=>()=>workerRef.current?.terminate(),[]);
-  const presets:[string,TranslationKey][]=[["Default","preset.default"],["Balanced","preset.balanced"],["Hot","preset.hot"],["Gap","preset.gap"],["Pair","preset.pair"],["Triple","preset.triple"],["Custom","preset.custom"]];
+  useEffect(()=>()=>{workerRef.current?.terminate();portfolioWorkerRef.current?.terminate();},[]);
+  useEffect(()=>{portfolioWorkerRef.current?.terminate();setPortfolioData(null);setPortfolioRunning(false);setPortfolioFailed(false);},[draws,settings,selectedGame,fromDate,toDate,trainingDraws,preset,predictionCount]);
+  const presets:[string,TranslationKey][]=[["Default","preset.default"],["Balanced","preset.balanced"],["Hot","preset.hot"],["Gap","preset.gap"],["Gap + Frequency","preset.gapFrequency"],["Pair","preset.pair"],["Triple","preset.triple"],["Custom","preset.custom"]];
   const parsedManual=useMemo(()=>parseCompactCombinations(manualInput,maxNumber),[manualInput,maxNumber]);
   const trainingAvailability=useMemo(()=>getBacktestTrainingWindows(draws,fromDate,toDate),[draws,fromDate,toDate]);
   const fullMode=trainingAvailability.windows.includes(trainingDraws);
@@ -194,6 +229,14 @@ export function BacktestPage(){
     worker.postMessage({draws,settings:effectiveSettings,maxNumber,fromDate,toDate,trainingDraws:activeTrainingDraws,predictionCount:activePredictionCount,manualProposedSets:activeManualSets});
   };
   const runManual=()=>{if(!parsedManual.valid||!fullMode){setManualError(true);return;}setManualError(false);run({manualProposedSets:parsedManual.combinations});};
+  const runPortfolio=()=>{
+    if(!fromDate||!toDate||fromDate>toDate)return;
+    portfolioWorkerRef.current?.terminate();setPortfolioData(null);setPortfolioRunning(true);setPortfolioFailed(false);
+    const worker=new Worker(new URL("../backtest.worker.ts",import.meta.url),{type:"module"});portfolioWorkerRef.current=worker;
+    worker.onmessage=({data:payload}:MessageEvent<{portfolioRolling:PortfolioRollingResult}>)=>{setPortfolioData(payload.portfolioRolling);setPortfolioRunning(false);worker.terminate();portfolioWorkerRef.current=null;};
+    worker.onerror=()=>{setPortfolioFailed(true);setPortfolioRunning(false);worker.terminate();portfolioWorkerRef.current=null;};
+    worker.postMessage({draws,settings:settingsForPreset(settings,preset),maxNumber,fromDate,toDate,trainingDraws,predictionCount,portfolioRolling:true});
+  };
   const tableRows=useMemo<BacktestTableRow[]>(()=>data?.result.rows.flatMap(row=>row.predictions.map((prediction,index)=>({rank:index+1,combination:prediction.numbers.map(pad).join("-"),rate:prediction.rate,sum:prediction.total,root:prediction.digitalRoot,insideOutside:`${prediction.insideCount}/${prediction.outsideCount}`,evenOdd:`${prediction.evenCount}/${prediction.oddCount}`,single:prediction.singleScore,pair:prediction.pairScore,triple:prediction.tripleScore,structure:prediction.structureScore,totalScore:prediction.totalScore,matches:prediction.matches,actual:row.actual,evaluation:t(prediction.matches>=3?"pages.goodResult":"pages.referenceOnly")})))??[],[data,t]);
   const resultColumns=useMemo<ColumnDef<BacktestTableRow>[]>(()=>[
     {accessorKey:"combination",header:t("pages.proposedSets",{count:resultCount}),cell:info=><span className="backtest-combination"><b>#{info.row.original.rank}</b>{info.getValue<string>()}</span>},
@@ -218,7 +261,11 @@ export function BacktestPage(){
       <div className={`backtest-mode ${fullMode?"ready":"invalid"}`} role={fullMode?"status":"alert"}>{fullMode?t("pages.fullModeReady",{count:trainingAvailability.priorDraws}):t("pages.trainingRangeError",{count:trainingAvailability.priorDraws})}</div>
       <div className="manual-test"><label><span>{t("pages.manualInput")}</span><input value={manualInput} onChange={event=>{setManualInput(event.target.value);setManualError(false);}} className={manualError?"invalid":""} aria-invalid={manualError} aria-describedby="manual-test-help" placeholder="101436374143"/></label><Button className="secondary" onClick={runManual} disabled={running||!fullMode}><Play size={15}/>{t("pages.runTest")}</Button><small id="manual-test-help">{t("pages.manualInputHint")}</small>{manualError&&<><div className="manual-invalid-values">{parsedManual.entries.map((entry,entryIndex)=>{const compact=entry.replace(/[\s-]+/g,"");return /^\d{12}$/.test(compact)?<span className="manual-entry" key={`${entry}-${entryIndex}`}>{(compact.match(/\d{2}/g)??[]).map((chunk,chunkIndex)=><b className={parsedManual.issues.some(issue=>issue.entryIndex===entryIndex&&(issue.chunkIndex===chunkIndex||issue.chunkIndex===undefined))?"invalid":""} key={chunkIndex}>{chunk}</b>)}</span>:<b className="invalid" key={`${entry}-${entryIndex}`}>{entry}</b>;})}</div><p className="manual-error" role="alert">{!parsedManual.valid?t("pages.manualInputError",{max:maxNumber}):t("pages.manualInputRangeError")}</p></>}</div>
       <Button onClick={()=>run({manualProposedSets:null})} disabled={running||!fullMode}>{running?<LoaderCircle className="spin" size={15}/>:<Play size={15}/>} {running?t("pages.backtestLoading"):t("pages.runBacktest")}</Button>
+      <Button className="secondary" onClick={runPortfolio} disabled={portfolioRunning||!fromDate||!toDate||fromDate>toDate}>{portfolioRunning?<LoaderCircle className="spin" size={15}/>:<Play size={15}/>} {t("pages.runRollingPortfolio")}</Button>
     </Card>
+    {portfolioRunning&&<Card role="status">{t("pages.rollingLoading")}</Card>}
+    {portfolioFailed&&<Card role="alert">{t("pages.backtestError")}</Card>}
+    {portfolioData&&<Card><CardHeader title={t("pages.rollingPortfolioResults")} subtitle={t("pages.rollingPortfolioScope",{evaluated:portfolioData.evaluatedTargetCount,skipped:portfolioData.skippedTrainingCount,window:portfolioData.trainingWindow,tickets:portfolioData.requestedTicketCount})}/><div className="kpi-grid backtest-kpis">{([3,4,5,6] as const).map(threshold=>{const key=threshold===6?"six":`atLeast${threshold}` as "atLeast3"|"atLeast4"|"atLeast5";return <Card key={threshold}><span>≥{threshold}/6</span><b>{(portfolioData.hitRates[key]*100).toFixed(1)}%</b><small>95% CI {(portfolioData.confidence95[key][0]*100).toFixed(1)}–{(portfolioData.confidence95[key][1]*100).toFixed(1)}%</small></Card>;})}</div><p>{t("pages.rollingTicketCount",{min:portfolioData.minimumTicketCount,mean:portfolioData.meanTicketCount.toFixed(1),requested:portfolioData.requestedTicketCount})}</p></Card>}
     {failed&&<Card className="backtest-loading" role="alert">{t("pages.backtestError")}</Card>}
     {!data&&!failed&&!running&&<Card className="backtest-loading">{t("pages.backtestReady")}</Card>}
     {running&&<Card className="backtest-loading" role="status"><LoaderCircle className="spin" size={18}/>{t("pages.backtestLoading")}</Card>}
@@ -230,9 +277,9 @@ export function BacktestPage(){
   </div>;
 }
 export function SettingsPage(){
-  const {settings,updateSettings,resetData}=useLotteryStore();
+  const {settings,updateSettings,resetSettings}=useLotteryStore();
   const {t}=useI18n();
   const consensusLabels={frequency:"settings.frequency",momentum:"settings.momentum",gap:"settings.gap",association:"settings.association"} as const;
   const combinationLabels={consensus:"settings.consensus",pair:"settings.pair",triple:"settings.triple",structure:"settings.structure",novelty:"settings.novelty"} as const;
-  return <><PageTitle title={t("settings.title")} subtitle={t("settings.subtitle")}/><div className="settings-grid"><Card><CardHeader title={t("settings.candidateGeneration")}/><label>{t("settings.candidatePoolSize")}<input type="number" min="10" max="18" value={settings.candidatePoolSize} onChange={e=>updateSettings({candidatePoolSize:Number(e.target.value)})}/></label><label>{t("settings.minimumTotal")}<input type="number" value={settings.minTotal} onChange={e=>updateSettings({minTotal:Number(e.target.value)})}/></label><label>{t("settings.maximumOverlap")}<input type="number" min="0" max="5" value={settings.maxCombinationOverlap} onChange={e=>updateSettings({maxCombinationOverlap:Number(e.target.value)})}/></label><label>{t("settings.suggestedParity")}<output>{settings.allowedParity.join(", ")}</output></label></Card><Card><CardHeader title={t("settings.modelSupport")}/><label>{t("settings.weightedFrequencyHalfLife")}<input type="number" min="1" value={settings.weightedFrequencyHalfLife} onChange={e=>updateSettings({weightedFrequencyHalfLife:Number(e.target.value)})}/></label><label>{t("settings.minimumPairSupport")}<input type="number" min="1" value={settings.minPairSupport} onChange={e=>updateSettings({minPairSupport:Number(e.target.value)})}/></label><label>{t("settings.minimumTransitionSupport")}<input type="number" min="1" value={settings.minTransitionSupport} onChange={e=>updateSettings({minTransitionSupport:Number(e.target.value)})}/></label><label>{t("settings.backtestTrainingDraws")}<input type="number" min="10" value={settings.backtestMinTrainingDraws} onChange={e=>updateSettings({backtestMinTrainingDraws:Number(e.target.value)})}/></label></Card><Card><CardHeader title={t("settings.consensusWeights")}/>{Object.entries(settings.consensusWeights).map(([key,value])=><label key={key}>{t(consensusLabels[key as keyof typeof consensusLabels])}<input type="number" min="0" value={value} onChange={e=>updateSettings({consensusWeights:{...settings.consensusWeights,[key]:Number(e.target.value)}})}/></label>)}</Card><Card><CardHeader title={t("settings.combinationWeights")}/>{Object.entries(settings.comboWeightsV2).map(([key,value])=><label key={key}>{t(combinationLabels[key as keyof typeof combinationLabels])}<input type="number" min="0" value={value} onChange={e=>updateSettings({comboWeightsV2:{...settings.comboWeightsV2,[key]:Number(e.target.value)}})}/></label>)}</Card></div><Button className="secondary settings-reset" onClick={resetData}><RotateCcw size={15}/>{t("settings.restoreDefaults")}</Button></>;
+  return <><PageTitle title={t("settings.title")} subtitle={t("settings.subtitle")}/><div className="settings-grid"><Card><CardHeader title={t("settings.candidateGeneration")}/><label>{t("settings.candidatePoolSize")}<input type="number" min="6" max="18" value={settings.candidatePoolSize} onChange={e=>updateSettings({candidatePoolSize:Number(e.target.value)})}/></label><label>{t("settings.minimumTotal")}<input type="number" value={settings.minTotal} onChange={e=>updateSettings({minTotal:Number(e.target.value)})}/></label><label>{t("settings.maximumOverlap")}<input type="number" min="0" max="5" value={settings.maxCombinationOverlap} onChange={e=>updateSettings({maxCombinationOverlap:Number(e.target.value)})}/></label><label>{t("settings.suggestedParity")}<output>{settings.allowedParity.join(", ")}</output></label></Card><Card><CardHeader title={t("settings.modelSupport")}/><label>{t("settings.weightedFrequencyHalfLife")}<input type="number" min="1" value={settings.weightedFrequencyHalfLife} onChange={e=>updateSettings({weightedFrequencyHalfLife:Number(e.target.value)})}/></label><label>{t("settings.minimumPairSupport")}<input type="number" min="1" value={settings.minPairSupport} onChange={e=>updateSettings({minPairSupport:Number(e.target.value)})}/></label><label>{t("settings.completedGapMinimum")}<input type="number" min="1" value={settings.minCompletedGaps??4} onChange={e=>updateSettings({minCompletedGaps:Number(e.target.value)})}/></label><label>{t("settings.backtestTrainingDraws")}<input type="number" min="10" value={settings.backtestMinTrainingDraws} onChange={e=>updateSettings({backtestMinTrainingDraws:Number(e.target.value)})}/></label></Card><Card><CardHeader title={t("settings.consensusWeights")}/>{Object.entries(settings.consensusWeights).map(([key,value])=><label key={key}>{t(consensusLabels[key as keyof typeof consensusLabels])}<input type="number" min="0" value={value} onChange={e=>updateSettings({consensusWeights:{...settings.consensusWeights,[key]:Number(e.target.value)}})}/></label>)}</Card><Card><CardHeader title={t("settings.combinationWeights")}/>{Object.entries(settings.comboWeightsV2).map(([key,value])=><label key={key}>{t(combinationLabels[key as keyof typeof combinationLabels])}<input type="number" min="0" value={value} onChange={e=>updateSettings({comboWeightsV2:{...settings.comboWeightsV2,[key]:Number(e.target.value)}})}/></label>)}</Card></div><Button className="secondary settings-reset" onClick={resetSettings}><RotateCcw size={15}/>{t("settings.restoreDefaults")}</Button></>;
 }

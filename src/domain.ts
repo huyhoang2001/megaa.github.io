@@ -7,7 +7,7 @@ export type Draw = {
   jackpot2?: number;
 };
 
-export type PeriodPreset = "last10" | "last20" | "last30" | "last50" | "last100" | "last6months" | "last1year" | "all" | "custom";
+export type PeriodPreset = "last10" | "last20" | "last30" | "last40" | "last50" | "last60" | "last100" | "last6months" | "last1year" | "all" | "custom";
 export type LotteryGame = "mega645" | "power655";
 export type ThemeMode = "light" | "dark" | "system";
 export type LanguageMode = "vi" | "en";
@@ -21,6 +21,9 @@ export type DashboardFilters = {
   fromDate?: string;
   toDate?: string;
 };
+export type CombinationScoreKey="singleScore"|"pairScore"|"tripleScore"|"structureScore"|"totalScore";
+export type CombinationScoreRanges=Record<CombinationScoreKey,{min:string;max:string}>;
+export type IndependentFilterConfig={enabled:boolean;preset:string;ranges:CombinationScoreRanges;resultCount:20|50;sort:"proposal"|"filter"};
 
 export type AnalysisSettings = {
   candidatePoolSize: number;
@@ -42,24 +45,26 @@ export type AnalysisSettings = {
   consensusWeights: { frequency: number; momentum: number; gap: number; association: number };
   comboWeightsV2: { consensus: number; pair: number; triple: number; structure: number; novelty: number };
   backtestMinTrainingDraws: number;
+  minCompletedGaps?: number;
+  gapModelVersion?: "legacy" | "v2";
 };
 
 export type Confidence = "LOW" | "MEDIUM" | "HIGH";
 export type ModelSignal = { rawScore: number; normalizedScore: number; percentileRank: number; rank: number; confidence: Confidence; explanation: string[] };
 export type RollingFrequency = { last10: number; last20: number; last30: number; last50: number; last100: number; all: number };
-export type GapStats = { gaps: number[]; currentGap: number; meanGap: number; medianGap: number; minGap: number; maxGap: number; stdGap: number; q1: number; q3: number; gapPercentile: number; gapZ: number; gapCV: number };
+export type GapStats = { gaps: number[]; currentGap: number; meanGap: number|null; medianGap: number|null; minGap: number|null; maxGap: number|null; maxCompletedGap: number|null; stdGap: number|null; q1: number|null; q3: number|null; gapPercentile: number|null; gapZ: number|null; gapCV: number|null; completedGapCount:number; gapSupport:number; gapCensored:boolean; gapScore:number };
 
 export type SingleNumberStats = {
   number: number;
   totalCount: number;
   frequencyRate: number;
   currentGap: number;
-  averageGap: number;
-  maxGap: number;
+  averageGap: number|null;
+  maxGap: number|null;
   countLast10: number;
   countLast30: number;
   trend30: number;
-  gapRatio: number;
+  gapRatio: number|null;
   inside: boolean;
   parity: "EVEN" | "ODD";
   state: NumberState;
@@ -81,7 +86,7 @@ export type SingleNumberStats = {
 
 export type PairStats = { a: number; b: number; key: string; count: number; rate: number; lift: number; recentCount: number; recentLift: number; confidence: Confidence; insideCount: number; outsideCount: number; evenCount: number; oddCount: number; rank: number };
 export type TripleStats = { numbers: [number, number, number]; key: string; count: number; rate: number; lift: number; confidence: Confidence; insideCount: number; outsideCount: number; evenCount: number; oddCount: number; rank: number };
-export type CandidateCombination = { numbers: number[]; total: number; digitalRoot: number; evenCount: number; oddCount: number; insideCount: number; outsideCount: number; singleScore: number; pairScore: number; tripleScore: number; structureScore: number; noveltyScore: number; maxHistoricalOverlap: number; totalScore: number; confidence: Confidence; valid: boolean; rank?: number };
+export type CandidateCombination = { numbers: number[]; total: number; digitalRoot: number; evenCount: number; oddCount: number; insideCount: number; outsideCount: number; singleScore: number; pairScore: number; tripleScore: number; structureScore: number; noveltyScore: number; maxHistoricalOverlap: number; totalScore: number; confidence: Confidence; valid: boolean; rank?: number; candidateRank?:number };
 
 export const LOTTERY_GAMES={
   mega645:{id:"mega645",name:"Mega 6/45",shortName:"MEGA",maxNumber:45},
@@ -110,6 +115,9 @@ export const DEFAULT_SETTINGS: AnalysisSettings = {
   consensusWeights: { frequency: 25, momentum: 25, gap: 25, association: 25 },
   comboWeightsV2: { consensus: 30, pair: 20, triple: 10, structure: 25, novelty: 15 },
   backtestMinTrainingDraws: 50,
+  minCompletedGaps: 4,
+  gapModelVersion: "legacy",
 };
 
 export const DEFAULT_FILTERS: DashboardFilters = { period: "last1year", analysisView: "Overview", scoringPreset: "Default", predictionCount: 5 };
+export const DEFAULT_INDEPENDENT_FILTER:IndependentFilterConfig={enabled:false,preset:"Default",ranges:{singleScore:{min:"",max:""},pairScore:{min:"",max:""},tripleScore:{min:"",max:""},structureScore:{min:"",max:""},totalScore:{min:"",max:""}},resultCount:20,sort:"proposal"};

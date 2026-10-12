@@ -29,7 +29,7 @@ function Sidebar({ collapsed, setCollapsed, mobileOpen, setMobileOpen }: { colla
   const game=LOTTERY_GAMES[selectedGame];
   const asset=(name:string)=>`${import.meta.env.BASE_URL}${name}`;
   return <aside className={`sidebar ${collapsed?"collapsed":""} ${mobileOpen?"mobile-open":""}`}>
-    <div className="logo"><Mascot className="logo-mascot" size={52} directions={asset("tv-directions.webp")} reactions={asset("tv-reactions.webp")} label={t("shell.mascotLabel")}/><div><b>{game.shortName}</b><small>ANALYTICS</small></div><button className="mobile-close" onClick={()=>setMobileOpen(false)} aria-label={t("shell.closeMenu")}><X size={18}/></button></div>
+    <div className="logo"><NavLink className="logo-home" to="/" onClick={()=>setMobileOpen(false)} aria-label={t("nav.dashboard")}><Mascot className="logo-mascot" size={52} directions={asset("tv-directions.webp")} reactions={asset("tv-reactions.webp")} label={t("shell.mascotLabel")}/><div><b>{game.shortName}</b><small>ANALYTICS</small></div></NavLink><button className="mobile-close" onClick={()=>setMobileOpen(false)} aria-label={t("shell.closeMenu")}><X size={18}/></button></div>
     <nav>{nav.map(([to,labelKey,Icon])=>{const label=t(labelKey as TranslationKey);return <NavLink key={to} to={to} end={to==="/"} onClick={()=>setMobileOpen(false)} title={collapsed?label:undefined}><Icon size={18}/><span>{label}</span></NavLink>;})}</nav>
     <button className="collapse-button" onClick={()=>setCollapsed(!collapsed)} aria-label={collapsed?t("shell.expandSidebar"):t("shell.collapseSidebar")} title={collapsed?t("shell.expandSidebar"):t("shell.collapseSidebar")}>{collapsed?<ChevronRight size={19}/>:<ChevronLeft size={19}/>}</button>
   </aside>;

@@ -1,14 +1,19 @@
 import { describe,expect,it } from "vitest";
 import powerHistory from "./data/power655-history.json";
 import type { Draw } from "./domain";
-import { mergeBundledDraws, mergeBundledPowerDraws, mergeSettings } from "./store";
+import { mergeBundledDraws, mergeBundledPowerDraws, mergeSettings, normalizeDashboardFilters, validDraws, validSettings } from "./store";
 
 describe("Power history persistence migration",()=>{
+  it("uses only the five selectable periods for saved filters",()=>{
+    expect(normalizeDashboardFilters({period:"last10"}).period).toBe("last1year");
+    expect(normalizeDashboardFilters({period:"last50"}).period).toBe("last50");
+  });
   it("upgrades the previous default digital roots",()=>{
     expect(mergeSettings({allowedDigitalRoots:[1,3,5,8]}).allowedDigitalRoots).toEqual([1,3,5,6,7,8,9]);
   });
   it("keeps suggested parity limited to balanced 3/3, 4/2, or 2/4",()=>{
     expect(mergeSettings({allowedParity:["6/0","5/1","1/5","0/6"]}).allowedParity).toEqual(["3/3","4/2","2/4"]);
+    expect(mergeSettings({allowedParity:["2/4","4/2"]}).allowedParity).toEqual(["2/4","4/2"]);
   });
   it("restores official jackpot values and missing draws while preserving edits",()=>{
     const latest=powerHistory.draws.at(-1) as Draw;
@@ -33,5 +38,14 @@ describe("Power history persistence migration",()=>{
     expect(merged).toHaveLength(2);
     expect(merged[0].numbers).toEqual([2,3,4,5,6,7]);
     expect(merged[1]).toEqual(bundled[1]);
+  });
+  it("rejects invalid imported draws and settings before persisting",()=>{
+    const draw:Draw={id:"a",date:"2026-10-07",numbers:[1,2,3,4,5,6],jackpot:0};
+    expect(validDraws([draw],45)).toBe(true);
+    expect(validDraws([draw,{...draw}],45)).toBe(false);
+    expect(validDraws([{...draw,numbers:[1,2,3,4,5,53]}],45)).toBe(false);
+    expect(validDraws([{...draw,date:"2026-02-30"}],45)).toBe(false);
+    expect(validSettings({...mergeSettings(),candidatePoolSize:NaN})).toBe(false);
+    expect(validSettings({...mergeSettings(),consensusWeights:{frequency:0,momentum:0,gap:0,association:0}})).toBe(false);
   });
 });

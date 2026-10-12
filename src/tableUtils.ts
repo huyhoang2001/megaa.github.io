@@ -1,6 +1,7 @@
 export function matchesColumnFilter(value: unknown, rawFilter: string) {
   const filter=rawFilter.trim();
   if(!filter) return true;
+  if(value==null&&/^(?:<=|>=|!=|=|<|>)?\s*-?\d+(?:\.\d+)?(?:\s*\.\.\s*-?\d+(?:\.\d+)?)?$/.test(filter))return false;
   if(typeof value==="number"&&Number.isFinite(value)){
     const comparison=filter.match(/^(<=|>=|!=|=|<|>)\s*(-?\d+(?:\.\d+)?)$/);
     if(comparison){
