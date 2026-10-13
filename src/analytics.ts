@@ -439,6 +439,8 @@ export function selectExperimentalPowerPortfolio(allCandidates:CandidateCombinat
   }
   const wide=scoreCandidateCombinations(sampled,singles,pairs,triples,experimentalSettings,history).filter(item=>item.valid);
   const candidates=[...allCandidates,...wide];
+  const newNumberWeight=100;
+  const maxRawUtility=6*(newNumberWeight+1);
   const selected:CandidateCombination[]=[...firstFive];
   const selectedKeys=new Set(selected.map(item=>key(item.numbers)));
   const numberCounts=Array(56).fill(0);
@@ -449,11 +451,11 @@ export function selectExperimentalPowerPortfolio(allCandidates:CandidateCombinat
     let best:CandidateCombination|undefined,bestScore=-Infinity;
     for(const candidate of candidates){
       if(selectedKeys.has(key(candidate.numbers))||selected.some(ticket=>candidate.numbers.filter(number=>ticket.numbers.includes(number)).length>settings.maxCombinationOverlap))continue;
-      const score=100*candidate.numbers.filter(number=>!numberCounts[number]).length+candidate.numbers.reduce((sum,number)=>sum+1/(1+numberCounts[number]),0)-combinations(candidate.numbers,3).reduce((sum,triple)=>sum+(tripleCounts.get(key(triple))??0),0);
+      const score=newNumberWeight*candidate.numbers.filter(number=>!numberCounts[number]).length+candidate.numbers.reduce((sum,number)=>sum+1/(1+numberCounts[number]),0)-combinations(candidate.numbers,3).reduce((sum,triple)=>sum+(tripleCounts.get(key(triple))??0),0);
       if(score>bestScore||score===bestScore&&best&&(candidate.totalScore>best.totalScore||candidate.totalScore===best.totalScore&&key(candidate.numbers)<key(best.numbers))){best=candidate;bestScore=score;}
     }
     if(!best)break;
-    const chosen={...best,rank:selected.length+1,selectionReason:"coverage" as const,selectionScore:round2(bestScore)};
+    const chosen={...best,rank:selected.length+1,selectionReason:"coverage" as const,selectionScore:round2(clamp(bestScore/maxRawUtility*100))};
     selected.push(chosen);selectedKeys.add(key(chosen.numbers));add(chosen);
   }
   return selected.map((item,index)=>({...item,rank:index+1}));

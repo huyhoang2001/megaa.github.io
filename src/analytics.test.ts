@@ -127,7 +127,8 @@ describe("analytics", () => {
     expect(experimental).toHaveLength(50);
     expect(experimental.map(item=>item.numbers.join("-"))).toEqual(selectExperimentalPowerPortfolio(universe,singles,pairs,triples,DEFAULT_SETTINGS,training).map(item=>item.numbers.join("-")));
     expect(experimental.every(item=>item.valid&&item.numbers.every(number=>number>=1&&number<=55))).toBe(true);
-    expect(experimental.slice(5).every(item=>item.selectionReason==="coverage"&&Number.isFinite(item.selectionScore))).toBe(true);
+    expect(experimental.slice(0,5).every(item=>item.selectionScore===undefined)).toBe(true);
+    expect(experimental.slice(5).every(item=>item.selectionReason==="coverage"&&item.selectionScore!==undefined&&Number.isFinite(item.selectionScore)&&item.selectionScore>=0&&item.selectionScore<=100)).toBe(true);
     const coverage=calculatePortfolioCoverage(experimental.slice(0,20),55);
     expect(coverage.uniqueNumbers).toBe(55);
     expect(coverage.uniqueNumbers).toBeGreaterThan(standard.slice(0,20).flatMap(item=>item.numbers).filter((number,index,all)=>all.indexOf(number)===index).length);
