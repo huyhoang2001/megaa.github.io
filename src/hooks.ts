@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { calculatePairs, calculateSingles, calculateTriples, filterDraws, generateCandidateUniverse, selectPortfolio } from "./analytics";
+import { calculatePairs, calculateSingles, calculateTriples, filterDraws, generateCandidateUniverse, selectExperimentalPowerPortfolio, selectPortfolio } from "./analytics";
 import { useLotteryStore } from "./store";
 import type { AnalysisSettings } from "./domain";
 import { DEFAULT_SETTINGS, LOTTERY_GAMES } from "./domain";
@@ -17,7 +17,7 @@ export function settingsForPreset(settings: AnalysisSettings, preset: string):An
 }
 
 export function useAnalytics(topCombinationCount?:number, skipPredictions=false) {
-  const { draws:megaDraws, powerDraws, selectedGame, settings, dashboardFilters } = useLotteryStore();
+  const { draws:megaDraws, powerDraws, selectedGame, settings, dashboardFilters, powerSuggestionMode } = useLotteryStore();
   const {period,fromDate,toDate,scoringPreset}=dashboardFilters;
   const stats=useMemo(() => {
     const gameConfig=LOTTERY_GAMES[selectedGame];
@@ -30,6 +30,6 @@ export function useAnalytics(topCombinationCount?:number, skipPredictions=false)
     return { draws,filtered,singles,pairs,triples,selectedGame,gameConfig,effectiveSettings };
   }, [megaDraws,powerDraws,selectedGame,settings,period,fromDate,toDate,scoringPreset]);
   const candidateUniverse=useMemo(()=>skipPredictions?[]:generateCandidateUniverse(stats.singles,stats.pairs,stats.triples,stats.effectiveSettings,stats.filtered),[stats,skipPredictions]);
-  const predictions=useMemo(()=>skipPredictions?[]:selectPortfolio(candidateUniverse,stats.effectiveSettings,Math.max(50,topCombinationCount??0)),[candidateUniverse,stats.effectiveSettings,topCombinationCount,skipPredictions]);
+  const predictions=useMemo(()=>skipPredictions?[]:selectedGame==="power655"&&powerSuggestionMode==="experimental"?selectExperimentalPowerPortfolio(candidateUniverse,stats.singles,stats.pairs,stats.triples,stats.effectiveSettings,stats.filtered,Math.max(50,topCombinationCount??0)):selectPortfolio(candidateUniverse,stats.effectiveSettings,Math.max(50,topCombinationCount??0)),[candidateUniverse,stats,selectedGame,powerSuggestionMode,topCombinationCount,skipPredictions]);
   return {...stats,candidateUniverse,predictions};
 }

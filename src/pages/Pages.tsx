@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { CalendarDays, Download, Info, LoaderCircle, Pencil, Play, Plus, RotateCcw, Search, Settings2, SlidersHorizontal, Trash2, Upload } from "lucide-react";
 import { z } from "zod";
 import type { ColumnDef } from "@tanstack/react-table";
-import { calculateSingles, calculatePairs, calculateTriples, combinationScoreKeys, filterCombinationsByNumbers, getBacktestTrainingWindows, pad, parseCompactCombinations, scoreCandidateCombinations, selectFilteredPortfolio, validCombinationScoreRanges } from "../analytics";
+import { calculateSingles, calculatePairs, calculatePortfolioCoverage, calculateTriples, combinationScoreKeys, filterCombinationsByNumbers, getBacktestTrainingWindows, pad, parseCompactCombinations, scoreCandidateCombinations, selectFilteredPortfolio, validCombinationScoreRanges } from "../analytics";
 import type { CombinationScoreRanges } from "../analytics";
 import { LOTTERY_GAMES } from "../domain";
 import type { CandidateCombination, Draw, PairStats, SingleNumberStats, TripleStats } from "../domain";
@@ -136,7 +136,7 @@ export function CombinationsPage(){
   const labels=useTableLabels();
   const [predictionCount,setPredictionCount]=useState<20|50>(20);
   const {predictions,candidateUniverse,filtered}=useAnalytics(predictionCount);
-  const {settings,independentFilterConfig,updateIndependentFilterConfig,selectedGame}=useLotteryStore();
+  const {settings,independentFilterConfig,updateIndependentFilterConfig,selectedGame,powerSuggestionMode,setPowerSuggestionMode}=useLotteryStore();
   const [query,setQuery]=useState("");
   const [filterOpen,setFilterOpen]=useState(false);
   const [draftRanges,setDraftRanges]=useState(()=>independentFilterConfig.ranges);
@@ -147,6 +147,7 @@ export function CombinationsPage(){
   const hasScoreFilters=independentFilterConfig.enabled;
   const activeRangeSummary=combinationScoreKeys.flatMap(key=>{const range=independentFilterConfig.ranges[key];return range.min!==""||range.max!==""?[`${t(scoreLabels[key])}: ${range.min||"0"}–${range.max||"100"}`]:[];}).join(" · ");
   const visiblePredictions=filterCombinationsByNumbers(predictions.slice(0,predictionCount),query);
+  const coverage=useMemo(()=>calculatePortfolioCoverage(predictions.slice(0,predictionCount),LOTTERY_GAMES[selectedGame].maxNumber),[predictions,predictionCount,selectedGame]);
   const filteredPortfolio=useMemo(()=>{
     if(!independentFilterConfig.enabled)return null;
     const filterSettings=settingsForPreset(settings,independentFilterConfig.preset);
@@ -161,15 +162,18 @@ export function CombinationsPage(){
   const clearRanges=()=>{const ranges=blankScoreRanges();setDraftRanges(ranges);updateIndependentFilterConfig({enabled:false,ranges});setRangeError(false);};
   const columns=useMemo<ColumnDef<CandidateCombination>[]>(()=>[
     {accessorKey:"rank",header:t("pages.mainRank")},{id:"combination",accessorFn:row=>row.numbers.map(pad).join(" - "),header:t("common.combination")},{accessorKey:"total",header:t("pages.sum")},{accessorKey:"digitalRoot",header:t("pages.root")},{id:"evenOdd",accessorFn:row=>`${row.evenCount}/${row.oddCount}`,header:t("common.evenOdd")},{id:"insideOutside",accessorFn:row=>`${row.insideCount}/${row.outsideCount}`,header:t("common.insideOutside")},{accessorKey:"singleScore",header:t("pages.single"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"pairScore",header:t("common.pair"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"tripleScore",header:t("common.triple"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"structureScore",header:t("prediction.structure"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"totalScore",header:t("pages.proposalScore"),cell:info=>info.getValue<number>().toFixed(2)},
+    ...(selectedGame==="power655"&&powerSuggestionMode==="experimental"?[{id:"selectionReason",accessorFn:(row:CandidateCombination)=>row.selectionReason==="coverage"?t("pages.reasonCoverage"):t("pages.reasonScore"),header:t("pages.selectionReason")},{id:"selectionScore",accessorFn:(row:CandidateCombination)=>row.selectionScore??null,header:t("pages.selectionScore"),cell:(info:{getValue:()=>unknown})=>info.getValue()===null?"—":Number(info.getValue()).toFixed(2)}]:[]),
     {id:"portfolioOverlap",accessorFn:row=>Math.max(0,...predictions.filter(other=>other!==row).map(other=>row.numbers.filter(number=>other.numbers.includes(number)).length)),header:t("pages.portfolioOverlap")},{accessorKey:"confidence",header:t("pages.dataSupport")},
-  ],[t,predictions]);
+  ],[t,predictions,selectedGame,powerSuggestionMode]);
   const filteredColumns=useMemo<ColumnDef<NonNullable<typeof filteredPortfolio>["rows"][number]>[]>(()=>[
     {accessorKey:"filteredRank",header:t("common.rank")},{accessorKey:"mainRank",header:t("pages.mainRank"),cell:info=>info.getValue<number|null>()??t("pages.outsideMain")},{id:"candidateRank",accessorFn:row=>row.proposal.candidateRank??"",header:t("pages.candidateRank")},{id:"combination",accessorFn:row=>row.proposal.numbers.map(pad).join(" - "),header:t("common.combination")},{id:"proposalScore",accessorFn:row=>row.proposal.totalScore,header:t("pages.proposalScore"),cell:info=>info.getValue<number>().toFixed(2)},
     ...combinationScoreKeys.map(key=>({id:key,accessorFn:(row:NonNullable<typeof filteredPortfolio>["rows"][number])=>row.filter[key],header:t(scoreLabels[key]),cell:(info:{getValue:()=>unknown})=>Number(info.getValue()).toFixed(2)})),
   ],[t]);
   return <>
-    <PageTitle title={t("pages.combinationsTitle")} subtitle={t("pages.combinationsSubtitle")} actions={<><PeriodControl/><ScoringPresetControl/><label className="page-preset-control"><span>{t("dashboard.predictionCount")}</span><Select value={predictionCount} onChange={event=>setPredictionCount(Number(event.target.value) as 20|50)}><option value={20}>Top 20</option><option value={50}>Top 50</option></Select></label></>}/>
+    <PageTitle title={t("pages.combinationsTitle")} subtitle={t("pages.combinationsSubtitle")} actions={<><PeriodControl/><ScoringPresetControl/>{selectedGame==="power655"&&<label className="page-preset-control"><span>{t("pages.selectionMethod")}</span><Select value={powerSuggestionMode} onChange={event=>setPowerSuggestionMode(event.target.value as "standard"|"experimental")}><option value="standard">{t("pages.methodStandard")}</option><option value="experimental">{t("pages.methodPowerExperimental")}</option></Select></label>}<label className="page-preset-control"><span>{t("dashboard.predictionCount")}</span><Select value={predictionCount} onChange={event=>setPredictionCount(Number(event.target.value) as 20|50)}><option value={20}>Top 20</option><option value={50}>Top 50</option></Select></label></>}/>
     <Card className="notice">{t("pages.combinationsNotice")}</Card>
+    {selectedGame==="power655"&&powerSuggestionMode==="experimental"&&<p className="disclaimer"><Info size={14}/>{t("pages.selectionScoreHelp")}</p>}
+    <Card className="combination-coverage" style={{display:"flex",flexWrap:"wrap",gap:"8px 24px",padding:"14px",marginBottom:"10px"}} aria-label={t("pages.coverageMetrics")}><span>{t("pages.uniqueNumbers")}: <b>{coverage.uniqueNumbers}/{LOTTERY_GAMES[selectedGame].maxNumber}</b></span><span>{t("pages.uniquePairs")}: <b>{coverage.uniquePairs}</b></span><span>{t("pages.uniqueTriples")}: <b>{coverage.uniqueTriples}</b></span><span>{t("pages.mostRepeatedTriple")}: <b>{coverage.mostRepeatedTriple?`${coverage.mostRepeatedTriple.numbers} (${coverage.mostRepeatedTriple.ticketCount})`:"—"}</b></span></Card>
     <div className="combination-search"><div className="combination-search-controls"><label><span>{t("pages.searchCombinationLabel")}</span><div className="combination-search-field"><Search size={15} aria-hidden="true"/><input type="search" inputMode="numeric" value={query} onChange={event=>setQuery(event.target.value)} placeholder={t("pages.searchCombination")} aria-describedby="combination-search-count"/></div></label><Button type="button" className={`secondary combination-filter-toggle${hasScoreFilters?" active":""}`} aria-expanded={filterOpen} aria-controls="combination-score-filters" onClick={()=>{if(!filterOpen){setDraftRanges(independentFilterConfig.ranges);setDraftPreset(independentFilterConfig.preset);setDraftCount(independentFilterConfig.resultCount);setDraftSort(independentFilterConfig.sort);setRangeError(false);}setFilterOpen(!filterOpen);}}><SlidersHorizontal size={16}/>{t("pages.customFilters")}</Button></div><span id="combination-search-count" aria-live="polite">{t("pages.combinationMatches",{count:visiblePredictions.length,total:Math.min(predictions.length,predictionCount)})}</span></div>
     {filterOpen&&<form id="combination-score-filters" className="combination-score-filters" onSubmit={applyRanges} noValidate><div className="combination-score-grid"><label>{t("dashboard.scoringPreset")}<Select value={draftPreset} onChange={event=>setDraftPreset(event.target.value)}>{["Default","Balanced","Hot","Legacy Gap","Gap + Frequency","Pair","Triple","Custom"].map(preset=><option key={preset} value={preset}>{t(({"Legacy Gap":"preset.legacyGap","Gap + Frequency":"preset.gapFrequency"} as Record<string,TranslationKey>)[preset]??(`preset.${preset.toLowerCase()}` as TranslationKey))}</option>)}</Select></label><label>{t("dashboard.predictionCount")}<Select value={draftCount} onChange={event=>setDraftCount(Number(event.target.value) as 20|50)}><option value={20}>Top 20</option><option value={50}>Top 50</option></Select></label><label>{t("pages.filterSort")}<Select value={draftSort} onChange={event=>setDraftSort(event.target.value as "proposal"|"filter")}><option value="proposal">{t("pages.sortProposal")}</option><option value="filter">{t("pages.sortFilter")}</option></Select></label>{combinationScoreKeys.map(key=><fieldset key={key}><legend>{t(scoreLabels[key])}</legend><label>{t("pages.scoreMinimum")}<input type="number" min="0" max="100" step="any" value={draftRanges[key].min} onChange={event=>{setDraftRanges(current=>({...current,[key]:{...current[key],min:event.target.value}}));setRangeError(false);}}/></label><label>{t("pages.scoreMaximum")}<input type="number" min="0" max="100" step="any" value={draftRanges[key].max} onChange={event=>{setDraftRanges(current=>({...current,[key]:{...current[key],max:event.target.value}}));setRangeError(false);}}/></label></fieldset>)}</div>{rangeError&&<p className="combination-filter-error" role="alert">{t("pages.invalidScoreRange")}</p>}<div className="combination-filter-actions"><Button type="button" className="secondary" onClick={clearRanges}>{t("pages.clearScoreFilters")}</Button><Button type="submit">{t("pages.applyScoreFilters")}</Button></div></form>}
     <DataTable data={visiblePredictions} columns={columns} labels={labels} onReset={()=>setQuery("")}/>
@@ -179,7 +183,7 @@ export function CombinationsPage(){
 export function BacktestPage(){
   const {t}=useI18n();
   const labels=useTableLabels();
-  const {draws:megaDraws,powerDraws,selectedGame,settings}=useLotteryStore();
+  const {draws:megaDraws,powerDraws,selectedGame,settings,powerSuggestionMode,setPowerSuggestionMode}=useLotteryStore();
   const draws=selectedGame==="power655"?powerDraws:megaDraws;
   const maxNumber=LOTTERY_GAMES[selectedGame].maxNumber;
   const defaultRange=()=>({from:draws.at(-51)?.date??draws[0]?.date??"",to:draws.at(-1)?.date??""});
@@ -203,7 +207,7 @@ export function BacktestPage(){
   const lastManualSetsRef=useRef<number[][]|undefined>(undefined);
   useEffect(()=>{const next=defaultRange();setFromDate(next.from);setToDate(next.to);setData(null);setFailed(false);lastManualSetsRef.current=undefined;},[selectedGame]);
   useEffect(()=>()=>{workerRef.current?.terminate();portfolioWorkerRef.current?.terminate();},[]);
-  useEffect(()=>{portfolioWorkerRef.current?.terminate();setPortfolioData(null);setPortfolioRunning(false);setPortfolioFailed(false);},[draws,settings,selectedGame,fromDate,toDate,trainingDraws,preset,predictionCount]);
+  useEffect(()=>{portfolioWorkerRef.current?.terminate();setPortfolioData(null);setPortfolioRunning(false);setPortfolioFailed(false);},[draws,settings,selectedGame,fromDate,toDate,trainingDraws,preset,predictionCount,powerSuggestionMode]);
   const presets:[string,TranslationKey][]=[["Default","preset.default"],["Balanced","preset.balanced"],["Hot","preset.hot"],["Legacy Gap","preset.legacyGap"],["Gap + Frequency","preset.gapFrequency"],["Pair","preset.pair"],["Triple","preset.triple"],["Custom","preset.custom"]];
   const parsedManual=useMemo(()=>parseCompactCombinations(manualInput,maxNumber),[manualInput,maxNumber]);
   const trainingAvailability=useMemo(()=>getBacktestTrainingWindows(draws,fromDate,toDate),[draws,fromDate,toDate]);
@@ -220,14 +224,14 @@ export function BacktestPage(){
     lastManualSetsRef.current=activeManualSets;
     setResultCount(activeManualSets?.length??activePredictionCount);
     const effectiveSettings=settingsForPreset(settings,activePreset);
-    const cacheKey=JSON.stringify([selectedGame,draws.map(draw=>[draw.id,draw.date,draw.numbers]),effectiveSettings,fromDate,toDate,activeTrainingDraws,activePredictionCount,activeManualSets]);
+    const cacheKey=JSON.stringify([selectedGame,draws.map(draw=>[draw.id,draw.date,draw.numbers]),effectiveSettings,fromDate,toDate,activeTrainingDraws,activePredictionCount,activeManualSets,powerSuggestionMode]);
     const cached=backtestCache.get(cacheKey);
     if(cached){setData(cached);setRunning(false);return;}
     const worker=new Worker(new URL("../backtest.worker.ts",import.meta.url),{type:"module"});
     workerRef.current=worker;
     worker.onmessage=({data:payload}:MessageEvent<BacktestPayload>)=>{backtestCache.set(cacheKey,payload);setData(payload);setRunning(false);worker.terminate();workerRef.current=null;};
     worker.onerror=()=>{setFailed(true);setRunning(false);worker.terminate();workerRef.current=null;};
-    worker.postMessage({draws,settings:effectiveSettings,maxNumber,fromDate,toDate,trainingDraws:activeTrainingDraws,predictionCount:activePredictionCount,manualProposedSets:activeManualSets});
+    worker.postMessage({draws,settings:effectiveSettings,maxNumber,fromDate,toDate,trainingDraws:activeTrainingDraws,predictionCount:activePredictionCount,manualProposedSets:activeManualSets,powerSuggestionMode});
   };
   const runManual=()=>{if(!parsedManual.valid||!fullMode){setManualError(true);return;}setManualError(false);run({manualProposedSets:parsedManual.combinations});};
   const runPortfolio=()=>{
@@ -236,7 +240,7 @@ export function BacktestPage(){
     const worker=new Worker(new URL("../backtest.worker.ts",import.meta.url),{type:"module"});portfolioWorkerRef.current=worker;
     worker.onmessage=({data:payload}:MessageEvent<{portfolioRolling:PortfolioRollingResult}>)=>{setPortfolioData(payload.portfolioRolling);setPortfolioRunning(false);worker.terminate();portfolioWorkerRef.current=null;};
     worker.onerror=()=>{setPortfolioFailed(true);setPortfolioRunning(false);worker.terminate();portfolioWorkerRef.current=null;};
-    worker.postMessage({draws,settings:settingsForPreset(settings,preset),maxNumber,fromDate,toDate,trainingDraws,predictionCount,portfolioRolling:true});
+    worker.postMessage({draws,settings:settingsForPreset(settings,preset),maxNumber,fromDate,toDate,trainingDraws,predictionCount,portfolioRolling:true,powerSuggestionMode});
   };
   const tableRows=useMemo<BacktestTableRow[]>(()=>data?.result.rows.flatMap(row=>row.predictions.map((prediction,index)=>({rank:index+1,combination:prediction.numbers.map(pad).join("-"),rate:prediction.rate,sum:prediction.total,root:prediction.digitalRoot,insideOutside:`${prediction.insideCount}/${prediction.outsideCount}`,evenOdd:`${prediction.evenCount}/${prediction.oddCount}`,single:prediction.singleScore,pair:prediction.pairScore,triple:prediction.tripleScore,structure:prediction.structureScore,totalScore:prediction.totalScore,matches:prediction.matches,actual:row.actual,evaluation:t(prediction.matches>=3?"pages.goodResult":"pages.referenceOnly")})))??[],[data,t]);
   const resultColumns=useMemo<ColumnDef<BacktestTableRow>[]>(()=>[
@@ -257,6 +261,7 @@ export function BacktestPage(){
         <label className="backtest-field"><span>{t("pages.trainingWindow")}</span><Select value={trainingDraws} disabled={!trainingAvailability.windows.length} onChange={event=>{const next=Number(event.target.value);setTrainingDraws(next);if(data||running)run({trainingDraws:next});}}>{[30,50,100].map(count=><option value={count} disabled={!trainingAvailability.windows.includes(count)} key={count}>{t("pages.previousDraws",{count})}</option>)}</Select></label>
         <label className="backtest-field"><span>{t("dashboard.scoringPreset")}</span><Select value={preset} onChange={event=>{const next=event.target.value;setPreset(next);if(data||running)run({preset:next});}}>{presets.map(([value,key])=><option value={value} key={value}>{t(key)}</option>)}</Select></label>
         <label className="backtest-field"><span>{t("dashboard.predictionCount")}</span><Select value={predictionCount} onChange={event=>{const next=Number(event.target.value);setPredictionCount(next);if(data||running)run({predictionCount:next});}}>{[5,10,20].map(count=><option value={count} key={count}>Top {count}</option>)}</Select></label>
+        {selectedGame==="power655"&&<label className="backtest-field"><span>{t("pages.selectionMethod")}</span><Select value={powerSuggestionMode} onChange={event=>{workerRef.current?.terminate();setRunning(false);setData(null);setPowerSuggestionMode(event.target.value as "standard"|"experimental");}}><option value="standard">{t("pages.methodStandard")}</option><option value="experimental">{t("pages.methodPowerExperimental")}</option></Select></label>}
       </div>
       <div className="backtest-note"><Info size={15}/><span>{t("pages.backtestNote")}</span></div>
       <div className={`backtest-mode ${fullMode?"ready":"invalid"}`} role={fullMode?"status":"alert"}>{fullMode?t("pages.fullModeReady",{count:trainingAvailability.priorDraws}):t("pages.trainingRangeError",{count:trainingAvailability.priorDraws})}</div>

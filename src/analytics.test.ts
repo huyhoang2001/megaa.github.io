@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculatePortfolioCoverage, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, digitalRoot, exactTopNumbers, filterCombinationsByNumbers, filterCombinationsByScores, filterCompleteCalendarMonths, filterDraws, generateCandidateUniverse, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, percentileRank, round2, runPortfolioRollingBacktest, runRollingBacktest, scoreCandidateCombinations, selectFilteredPortfolio, selectPortfolio, validCombinationScoreRanges, weightedAverage } from "./analytics";
+import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculatePortfolioCoverage, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, digitalRoot, exactTopNumbers, filterCombinationsByNumbers, filterCombinationsByScores, filterCompleteCalendarMonths, filterDraws, generateCandidateUniverse, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, percentileRank, round2, runPortfolioRollingBacktest, runRollingBacktest, scoreCandidateCombinations, selectExperimentalPowerPortfolio, selectFilteredPortfolio, selectPortfolio, validCombinationScoreRanges, weightedAverage } from "./analytics";
 import type { CombinationScoreRanges } from "./analytics";
 import { DEFAULT_SETTINGS, INSIDE_SET } from "./domain";
 import type { Draw } from "./domain";
@@ -117,6 +117,33 @@ describe("analytics", () => {
     expect(INSIDE_SET.has(47)).toBe(true);
     expect(INSIDE_SET.has(55)).toBe(true);
   });
+  it("builds a deterministic Power coverage portfolio without changing the first five",()=>{
+    const training=(powerHistory.draws as Draw[]).slice(-51,-1);
+    const singles=calculateSingles(training,DEFAULT_SETTINGS,55),pairs=calculatePairs(training,55),triples=calculateTriples(training,55);
+    const universe=generateCandidateUniverse(singles,pairs,triples,DEFAULT_SETTINGS,training);
+    const standard=selectPortfolio(universe,DEFAULT_SETTINGS,50);
+    const experimental=selectExperimentalPowerPortfolio(universe,singles,pairs,triples,DEFAULT_SETTINGS,training);
+    expect(experimental.slice(0,5).map(item=>item.numbers)).toEqual(standard.slice(0,5).map(item=>item.numbers));
+    expect(experimental).toHaveLength(50);
+    expect(experimental.map(item=>item.numbers.join("-"))).toEqual(selectExperimentalPowerPortfolio(universe,singles,pairs,triples,DEFAULT_SETTINGS,training).map(item=>item.numbers.join("-")));
+    expect(experimental.every(item=>item.valid&&item.numbers.every(number=>number>=1&&number<=55))).toBe(true);
+    expect(experimental.slice(5).every(item=>item.selectionReason==="coverage"&&Number.isFinite(item.selectionScore))).toBe(true);
+    const coverage=calculatePortfolioCoverage(experimental.slice(0,20),55);
+    expect(coverage.uniqueNumbers).toBe(55);
+    expect(coverage.uniqueNumbers).toBeGreaterThan(standard.slice(0,20).flatMap(item=>item.numbers).filter((number,index,all)=>all.indexOf(number)===index).length);
+    expect(coverage.mostRepeatedTriple?.ticketCount).toBeGreaterThanOrEqual(1);
+  },30000);
+  it("uses the same pre-target Power portfolio in single and rolling backtests",()=>{
+    const source=(powerHistory.draws as Draw[]).slice(-51);
+    const target=source.at(-1)!;
+    const options={fromDate:target.date,toDate:target.date,trainingDraws:50,predictionCount:20,maxNumber:55,powerSuggestionMode:"experimental" as const};
+    const single=backtestRange(source,DEFAULT_SETTINGS,options);
+    const rolling=runPortfolioRollingBacktest(source,DEFAULT_SETTINGS,{...options,predictionCount:20});
+    expect(single.rows[0].bestMatches).toBe(rolling.rows[0].bestMatches);
+    expect(single.rows[0].predictions).toHaveLength(20);
+    const altered=[...source.slice(0,-1),{...target,numbers:[1,2,3,4,5,6] as Draw["numbers"]}];
+    expect(backtestRange(altered,DEFAULT_SETTINGS,options).rows[0].predictions.map(item=>item.numbers)).toEqual(single.rows[0].predictions.map(item=>item.numbers));
+  },30000);
   it("searches combinations by every entered number",()=>{
     const items=[{numbers:[3,4,19,22,26,33],rank:1},{numbers:[3,10,19,25,34,45],rank:2},{numbers:[2,4,12,16,19,26],rank:3}];
     expect(filterCombinationsByNumbers(items,"03-19").map(item=>item.rank)).toEqual([1,2]);

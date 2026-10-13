@@ -3,16 +3,18 @@ import { persist } from "zustand/middleware";
 import history from "./data/mega645-history.json";
 import powerHistory from "./data/power655-history.json";
 import settingsJson from "./data/default-settings.json";
-import type { AnalysisSettings, DashboardFilters, Draw, IndependentFilterConfig, LanguageMode, LotteryGame, ThemeMode } from "./domain";
+import type { AnalysisSettings, DashboardFilters, Draw, IndependentFilterConfig, LanguageMode, LotteryGame, PeriodPreset, PowerSuggestionMode, ThemeMode } from "./domain";
 import { DEFAULT_FILTERS, DEFAULT_INDEPENDENT_FILTER } from "./domain";
 
 type State = {
   draws: Draw[];
   powerDraws: Draw[];
   selectedGame: LotteryGame;
+  powerSuggestionMode:PowerSuggestionMode;
   settings: AnalysisSettings;
   gameSettings:Record<LotteryGame,AnalysisSettings>;
   dashboardFilters: DashboardFilters;
+  gamePeriods:Record<LotteryGame,PeriodPreset>;
   independentFilterConfig: IndependentFilterConfig;
   gameFilterConfigs:Record<LotteryGame,IndependentFilterConfig>;
   themeMode: ThemeMode;
@@ -29,6 +31,7 @@ type State = {
   setThemeMode: (mode: ThemeMode) => void;
   setLanguageMode: (mode: LanguageMode) => void;
   setSelectedGame: (game: LotteryGame) => void;
+  setPowerSuggestionMode:(mode:PowerSuggestionMode)=>void;
 };
 
 const defaultDraws = history.draws as Draw[];
@@ -86,9 +89,11 @@ export const useLotteryStore = create<State>()(persist((set) => ({
   draws: defaultDraws,
   powerDraws: defaultPowerDraws,
   selectedGame: "mega645",
+  powerSuggestionMode:"standard",
   settings: defaultSettings,
   gameSettings:{mega645:defaultSettings,power655:defaultSettings},
   dashboardFilters: DEFAULT_FILTERS,
+  gamePeriods:{mega645:DEFAULT_FILTERS.period,power655:DEFAULT_FILTERS.period},
   independentFilterConfig: DEFAULT_INDEPENDENT_FILTER,
   gameFilterConfigs:{mega645:DEFAULT_INDEPENDENT_FILTER,power655:DEFAULT_INDEPENDENT_FILTER},
   themeMode: "light",
@@ -100,20 +105,22 @@ export const useLotteryStore = create<State>()(persist((set) => ({
   resetData: () => set({ draws: defaultDraws, powerDraws:defaultPowerDraws }),
   resetSettings: () => set(s=>({settings:defaultSettings,gameSettings:{...s.gameSettings,[s.selectedGame]:defaultSettings}})),
   updateSettings: settings => set(s => {const next={...s.settings,...settings};return validSettings(next,s.selectedGame==="power655"?55:45)?{settings:next,gameSettings:{...s.gameSettings,[s.selectedGame]:next}}:{};}),
-  updateDashboardFilters: filters => set(s => ({ dashboardFilters: { ...s.dashboardFilters, ...filters } })),
+  updateDashboardFilters: filters => set(s => ({ dashboardFilters: { ...s.dashboardFilters, ...filters },gamePeriods:filters.period?{...s.gamePeriods,[s.selectedGame]:filters.period}:s.gamePeriods })),
   updateIndependentFilterConfig: config => set(s => {const independentFilterConfig={...s.independentFilterConfig,...config};return {independentFilterConfig,gameFilterConfigs:{...s.gameFilterConfigs,[s.selectedGame]:independentFilterConfig}};}),
   setThemeMode: themeMode => set({ themeMode }),
   setLanguageMode: languageMode => set({ languageMode }),
-  setSelectedGame: selectedGame => set(s=>({selectedGame,settings:s.gameSettings[selectedGame],independentFilterConfig:s.gameFilterConfigs[selectedGame]})),
+  setSelectedGame: selectedGame => set(s=>({selectedGame,settings:s.gameSettings[selectedGame],independentFilterConfig:s.gameFilterConfigs[selectedGame],dashboardFilters:{...s.dashboardFilters,period:s.gamePeriods[selectedGame]}})),
+  setPowerSuggestionMode: powerSuggestionMode => set(s=>({powerSuggestionMode,...(powerSuggestionMode==="experimental"&&s.selectedGame==="power655"?{dashboardFilters:{...s.dashboardFilters,period:"last50" as const},gamePeriods:{...s.gamePeriods,power655:"last50" as const}}:{})})),
 }), {
   name: "mega645-analytics-data",
-  version: 7,
+  version: 8,
   migrate: (persisted,version) => {
     const state=persisted as Partial<State>;
     const oldDemo=version<2&&state.draws?.length===53&&state.draws[0]?.id==="d01"&&state.draws.at(-1)?.id==="d53";
     const legacySettings=mergeSettings(state.settings);
     const legacyFilter=normalizeFilterConfig(state.independentFilterConfig);
-    return {...state,draws:oldDemo?defaultDraws:state.draws??defaultDraws,powerDraws:version<6?mergeBundledPowerDraws(state.powerDraws):state.powerDraws??defaultPowerDraws,selectedGame:state.selectedGame??"mega645",settings:legacySettings,gameSettings:state.gameSettings??{mega645:legacySettings,power655:legacySettings},languageMode:state.languageMode??"en",independentFilterConfig:legacyFilter,gameFilterConfigs:state.gameFilterConfigs??{mega645:legacyFilter,power655:legacyFilter}};
+    const period=normalizeDashboardFilters(state.dashboardFilters).period;
+    return {...state,draws:oldDemo?defaultDraws:state.draws??defaultDraws,powerDraws:version<6?mergeBundledPowerDraws(state.powerDraws):state.powerDraws??defaultPowerDraws,selectedGame:state.selectedGame??"mega645",powerSuggestionMode:state.powerSuggestionMode??"standard",settings:legacySettings,gameSettings:state.gameSettings??{mega645:legacySettings,power655:legacySettings},gamePeriods:state.gamePeriods??{mega645:period,power655:period},languageMode:state.languageMode??"en",independentFilterConfig:legacyFilter,gameFilterConfigs:state.gameFilterConfigs??{mega645:legacyFilter,power655:legacyFilter}};
   },
   merge: (persisted,current) => {
     const state=persisted as Partial<State>;
@@ -122,15 +129,19 @@ export const useLotteryStore = create<State>()(persist((set) => ({
     const legacyFilter=normalizeFilterConfig(state.independentFilterConfig);
     const gameSettings={mega645:mergeSettings(state.gameSettings?.mega645??legacySettings),power655:mergeSettings(state.gameSettings?.power655??legacySettings)};
     const gameFilterConfigs={mega645:normalizeFilterConfig(state.gameFilterConfigs?.mega645??legacyFilter),power655:normalizeFilterConfig(state.gameFilterConfigs?.power655??legacyFilter)};
+    const normalizedFilters=normalizeDashboardFilters(state.dashboardFilters);
+    const gamePeriods={mega645:state.gamePeriods?.mega645??normalizedFilters.period,power655:state.gamePeriods?.power655??normalizedFilters.period};
     return {
       ...current,
       ...state,
       draws:mergeBundledDraws(state.draws,defaultDraws),
       powerDraws:mergeBundledPowerDraws(state.powerDraws),
       selectedGame,
+      powerSuggestionMode:state.powerSuggestionMode==="experimental"?"experimental":"standard",
       settings:gameSettings[selectedGame],
       gameSettings,
-      dashboardFilters:normalizeDashboardFilters(state.dashboardFilters),
+      gamePeriods,
+      dashboardFilters:{...normalizedFilters,period:gamePeriods[selectedGame]},
       independentFilterConfig:gameFilterConfigs[selectedGame],
       gameFilterConfigs,
     };

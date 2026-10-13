@@ -69,4 +69,16 @@ describe("Power history persistence migration",()=>{
       expect(useLotteryStore.getState().independentFilterConfig.preset).toBe("Hot");
     }finally{useLotteryStore.setState(original);}
   });
+  it("keeps Mega's period when enabling experimental Power",()=>{
+    const original=useLotteryStore.getState();
+    try{
+      useLotteryStore.getState().setSelectedGame("mega645");
+      useLotteryStore.getState().updateDashboardFilters({period:"last100"});
+      useLotteryStore.getState().setSelectedGame("power655");
+      useLotteryStore.getState().setPowerSuggestionMode("experimental");
+      expect(useLotteryStore.getState().dashboardFilters.period).toBe("last50");
+      useLotteryStore.getState().setSelectedGame("mega645");
+      expect(useLotteryStore.getState().dashboardFilters.period).toBe("last100");
+    }finally{useLotteryStore.setState(original);}
+  });
 });

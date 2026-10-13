@@ -36,6 +36,12 @@ it("does not recalculate analytics for display-only selector changes",()=>{
     expect(result!.pairs.find(item=>item.key==="01-02")?.count).toBe(10);
     expect(result!.triples.find(item=>item.key==="01-02-03")?.count).toBe(10);
     expect(result!.predictions).not.toBe(beforePeriodChange.predictions);
+    const megaPredictions=result!.predictions.map(item=>item.numbers.join("-"));
+    act(()=>useLotteryStore.getState().setPowerSuggestionMode("experimental"));
+    expect(result!.predictions.map(item=>item.numbers.join("-"))).toEqual(megaPredictions);
+    const beforeFilter=result!.predictions;
+    act(()=>useLotteryStore.getState().updateIndependentFilterConfig({preset:"Hot"}));
+    expect(result!.predictions).toBe(beforeFilter);
     const periodSingles=result!.singles;
     act(()=>root.render(createElement(Probe,{skip:true})));
     expect(result!.singles).toBe(periodSingles);

@@ -9,6 +9,7 @@ export type Draw = {
 
 export type PeriodPreset = "last10" | "last20" | "last30" | "last40" | "last50" | "last60" | "last100" | "last6months" | "last1year" | "all" | "custom";
 export type LotteryGame = "mega645" | "power655";
+export type PowerSuggestionMode = "standard" | "experimental";
 export type ThemeMode = "light" | "dark" | "system";
 export type LanguageMode = "vi" | "en";
 export type NumberState = "HOT" | "NEUTRAL" | "COOL" | "DUE" | "DROUGHT";
@@ -86,7 +87,7 @@ export type SingleNumberStats = {
 
 export type PairStats = { a: number; b: number; key: string; count: number; rate: number; lift: number; recentCount: number; recentLift: number; confidence: Confidence; insideCount: number; outsideCount: number; evenCount: number; oddCount: number; rank: number };
 export type TripleStats = { numbers: [number, number, number]; key: string; count: number; rate: number; lift: number; confidence: Confidence; insideCount: number; outsideCount: number; evenCount: number; oddCount: number; rank: number };
-export type CandidateCombination = { numbers: number[]; total: number; digitalRoot: number; evenCount: number; oddCount: number; insideCount: number; outsideCount: number; singleScore: number; pairScore: number; tripleScore: number; structureScore: number; noveltyScore: number; maxHistoricalOverlap: number; totalScore: number; confidence: Confidence; valid: boolean; rank?: number; candidateRank?:number };
+export type CandidateCombination = { numbers: number[]; total: number; digitalRoot: number; evenCount: number; oddCount: number; insideCount: number; outsideCount: number; singleScore: number; pairScore: number; tripleScore: number; structureScore: number; noveltyScore: number; maxHistoricalOverlap: number; totalScore: number; confidence: Confidence; valid: boolean; rank?: number; candidateRank?:number; selectionReason?:"score"|"coverage"; selectionScore?:number };
 
 export const LOTTERY_GAMES={
   mega645:{id:"mega645",name:"Mega 6/45",shortName:"MEGA",maxNumber:45},
