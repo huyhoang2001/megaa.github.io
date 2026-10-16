@@ -14,18 +14,20 @@ it("preserves the former Gap preset as Legacy Gap",()=>{
 it("does not recalculate analytics for display-only selector changes",()=>{
   const previous=useLotteryStore.getState();
   const draws:Draw[]=Array.from({length:12},(_,index)=>({id:String(index),date:`2026-01-${String(index+1).padStart(2,"0")}`,numbers:[1,2,3,4,5,7+index] as Draw["numbers"],jackpot:1}));
-  useLotteryStore.setState({draws,selectedGame:"mega645",settings:DEFAULT_SETTINGS,dashboardFilters:{...DEFAULT_FILTERS,period:"all"}});
+  useLotteryStore.setState({draws,selectedGame:"mega645",settings:DEFAULT_SETTINGS,dashboardFilters:{...DEFAULT_FILTERS,period:"all",predictionCount:5}});
   const container=document.createElement("div");
   document.body.append(container);
   const root=createRoot(container);
   let result:ReturnType<typeof useAnalytics>;
-  function Probe({count,skip}:{count?:number;skip?:boolean}){result=useAnalytics(count,skip);return null;}
+    function Probe({count,skip}:{count?:number;skip?:boolean}){result=useAnalytics(count,skip);return null;}
   try {
-    act(()=>root.render(createElement(Probe,{count:20})));
+    act(()=>root.render(createElement(Probe,{})));
     const initial=result!;
+    expect(initial.predictions).toHaveLength(5);
     act(()=>useLotteryStore.getState().updateDashboardFilters({analysisView:"Pairs",predictionCount:20}));
     expect(result!.filtered).toBe(initial.filtered);
-    expect(result!.predictions).toBe(initial.predictions);
+    expect(result!.predictions).not.toBe(initial.predictions);
+    expect(result!.predictions).toHaveLength(20);
     act(()=>root.render(createElement(Probe,{count:50})));
     expect(result!.singles).toBe(initial.singles);
     expect(result!.predictions).not.toBe(initial.predictions);

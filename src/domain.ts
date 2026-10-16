@@ -22,7 +22,7 @@ export type DashboardFilters = {
   fromDate?: string;
   toDate?: string;
 };
-export type CombinationScoreKey="singleScore"|"pairScore"|"tripleScore"|"structureScore"|"totalScore";
+export type CombinationScoreKey="singleScore"|"pairScore"|"gapScore"|"structureScore"|"totalScore";
 export type CombinationScoreRanges=Record<CombinationScoreKey,{min:string;max:string}>;
 export type IndependentFilterConfig={enabled:boolean;preset:string;ranges:CombinationScoreRanges;resultCount:20|50;sort:"proposal"|"filter"};
 
@@ -44,7 +44,8 @@ export type AnalysisSettings = {
   gapPercentileAlertThreshold: number;
   gapZAlertThreshold: number;
   consensusWeights: { frequency: number; momentum: number; gap: number; association: number };
-  comboWeightsV2: { consensus: number; pair: number; triple: number; structure: number; novelty: number };
+  singleScoreWeights: { frequency: number; zScore: number; momentum: number; gap: number };
+  comboWeightsV2: { single: number; pair: number; gap: number; structure: number; novelty: number };
   backtestMinTrainingDraws: number;
   minCompletedGaps?: number;
   gapModelVersion?: "legacy" | "v2";
@@ -87,7 +88,7 @@ export type SingleNumberStats = {
 
 export type PairStats = { a: number; b: number; key: string; count: number; rate: number; lift: number; recentCount: number; recentLift: number; confidence: Confidence; insideCount: number; outsideCount: number; evenCount: number; oddCount: number; rank: number };
 export type TripleStats = { numbers: [number, number, number]; key: string; count: number; rate: number; lift: number; confidence: Confidence; insideCount: number; outsideCount: number; evenCount: number; oddCount: number; rank: number };
-export type CandidateCombination = { numbers: number[]; total: number; digitalRoot: number; evenCount: number; oddCount: number; insideCount: number; outsideCount: number; singleScore: number; pairScore: number; tripleScore: number; structureScore: number; noveltyScore: number; maxHistoricalOverlap: number; totalScore: number; confidence: Confidence; valid: boolean; rank?: number; candidateRank?:number; selectionReason?:"score"|"coverage"; selectionScore?:number };
+export type CandidateCombination = { numbers: number[]; total: number; digitalRoot: number; evenCount: number; oddCount: number; insideCount: number; outsideCount: number; singleScore: number; pairScore: number; gapScore: number; tripleScore: number; structureScore: number; noveltyScore: number; maxHistoricalOverlap: number; totalScore: number; confidence: Confidence; dataSupport:Confidence; valid: boolean; rank?: number; candidateRank?:number; selectionReason?:"score"|"coverage"; selectionScore?:number };
 
 export const LOTTO535_INSIDE_NUMBERS=[2,3,4,5,6,7,8,9,10,11,13,14,15,16,18,21,22,23,24,26,29,34,35] as const;
 const COMMON_INSIDE_NUMBERS=[2,3,4,5,6,7,8,9,10,11,13,14,15,16,18,21,22,23,24,26,29,34,35,36,37,39,42,47,55];
@@ -117,11 +118,12 @@ export const DEFAULT_SETTINGS: AnalysisSettings = {
   gapPercentileAlertThreshold: 95,
   gapZAlertThreshold: 2,
   consensusWeights: { frequency: 25, momentum: 25, gap: 25, association: 25 },
-  comboWeightsV2: { consensus: 30, pair: 20, triple: 10, structure: 25, novelty: 15 },
+  singleScoreWeights: { frequency: 35, zScore: 25, momentum: 20, gap: 20 },
+  comboWeightsV2: { single: 38, pair: 28, gap: 18, structure: 10, novelty: 6 },
   backtestMinTrainingDraws: 50,
   minCompletedGaps: 4,
   gapModelVersion: "legacy",
 };
 
 export const DEFAULT_FILTERS: DashboardFilters = { period: "last1year", analysisView: "Overview", scoringPreset: "Default", predictionCount: 5 };
-export const DEFAULT_INDEPENDENT_FILTER:IndependentFilterConfig={enabled:false,preset:"Default",ranges:{singleScore:{min:"",max:""},pairScore:{min:"",max:""},tripleScore:{min:"",max:""},structureScore:{min:"",max:""},totalScore:{min:"",max:""}},resultCount:20,sort:"proposal"};
+export const DEFAULT_INDEPENDENT_FILTER:IndependentFilterConfig={enabled:false,preset:"Default",ranges:{singleScore:{min:"",max:""},pairScore:{min:"",max:""},gapScore:{min:"",max:""},structureScore:{min:"",max:""},totalScore:{min:"",max:""}},resultCount:20,sort:"proposal"};

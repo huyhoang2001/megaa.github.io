@@ -45,7 +45,7 @@ const previousDefaultRoots=[[8,5,3,1],[1,2,3,4,5,6,7,8,9]];
 const selectablePeriods=new Set<DashboardFilters["period"]>(["last30","last50","last100","last1year","all"]);
 export const normalizeDashboardFilters=(filters?:Partial<DashboardFilters>):DashboardFilters=>{
   const merged={...DEFAULT_FILTERS,...filters};
-  return {...merged,period:selectablePeriods.has(merged.period)?merged.period:DEFAULT_FILTERS.period,scoringPreset:merged.scoringPreset==="Gap"?"Legacy Gap":merged.scoringPreset};
+  return {...merged,period:selectablePeriods.has(merged.period)?merged.period:DEFAULT_FILTERS.period,scoringPreset:merged.scoringPreset==="Gap"?"Legacy Gap":merged.scoringPreset==="Triple"?"Default":merged.scoringPreset};
 };
 export const mergeBundledDraws=(stored:Draw[]|undefined,bundledDraws:Draw[]):Draw[]=>{
   if(!stored?.length)return bundledDraws;
@@ -72,14 +72,15 @@ export const mergeSettings=(settings?:Partial<AnalysisSettings>,defaults:Analysi
   allowedParity:settings?.allowedParity?.filter(value=>defaults.allowedParity.includes(value)).length?settings.allowedParity.filter(value=>defaults.allowedParity.includes(value)):[...defaults.allowedParity],
   allowedDigitalRoots:settings?.allowedDigitalRoots&&previousDefaultRoots.some(roots=>settings.allowedDigitalRoots!.length===roots.length&&roots.every(root=>settings.allowedDigitalRoots!.includes(root)))?defaults.allowedDigitalRoots:[...(settings?.allowedDigitalRoots??defaults.allowedDigitalRoots)],
   consensusWeights:{...defaults.consensusWeights,...settings?.consensusWeights},
-  comboWeightsV2:{...defaults.comboWeightsV2,...settings?.comboWeightsV2},
+  singleScoreWeights:{...defaults.singleScoreWeights,...settings?.singleScoreWeights},
+  comboWeightsV2:settings?.comboWeightsV2?.single!==undefined?{...defaults.comboWeightsV2,...settings.comboWeightsV2}:settings?.comboWeightsV2?{single:(settings.comboWeightsV2 as AnalysisSettings["comboWeightsV2"]&{consensus?:number}).consensus??defaults.comboWeightsV2.single,pair:settings.comboWeightsV2.pair??defaults.comboWeightsV2.pair,gap:(settings.comboWeightsV2 as AnalysisSettings["comboWeightsV2"]&{triple?:number}).triple??defaults.comboWeightsV2.gap,structure:settings.comboWeightsV2.structure??defaults.comboWeightsV2.structure,novelty:settings.comboWeightsV2.novelty??defaults.comboWeightsV2.novelty}:{...defaults.comboWeightsV2},
 });
 export const validSettings=(settings:AnalysisSettings,maxNumber=55,drawSize=6)=>{
   const integer=(value:number,min:number,max:number)=>Number.isInteger(value)&&value>=min&&value<=max;
   const weights=(values:Record<string,number>)=>Object.values(values).every(value=>Number.isFinite(value)&&value>=0)&&Object.values(values).some(value=>value>0);
-  return integer(settings.candidatePoolSize,drawSize,Math.min(18,maxNumber))&&integer(settings.minTotal,0,drawSize*maxNumber-drawSize*(drawSize-1)/2)&&integer(settings.maxCombinationOverlap,0,drawSize-1)&&Number.isFinite(settings.weightedFrequencyHalfLife)&&settings.weightedFrequencyHalfLife>0&&integer(settings.minPairSupport,1,10000)&&integer(settings.minCompletedGaps??4,1,10000)&&weights(settings.consensusWeights)&&weights(settings.comboWeightsV2);
+  return integer(settings.candidatePoolSize,drawSize,Math.min(18,maxNumber))&&integer(settings.minTotal,0,drawSize*maxNumber-drawSize*(drawSize-1)/2)&&integer(settings.maxCombinationOverlap,0,drawSize-1)&&Number.isFinite(settings.weightedFrequencyHalfLife)&&settings.weightedFrequencyHalfLife>0&&integer(settings.minPairSupport,1,10000)&&integer(settings.minCompletedGaps??4,1,10000)&&weights(settings.consensusWeights)&&weights(settings.singleScoreWeights)&&weights(settings.comboWeightsV2);
 };
-const normalizeFilterConfig=(config?:Partial<IndependentFilterConfig>):IndependentFilterConfig=>({...DEFAULT_INDEPENDENT_FILTER,...config,preset:config?.preset==="Gap"?"Legacy Gap":config?.preset??DEFAULT_INDEPENDENT_FILTER.preset});
+const normalizeFilterConfig=(config?:Partial<IndependentFilterConfig>):IndependentFilterConfig=>({...DEFAULT_INDEPENDENT_FILTER,...config,ranges:{...DEFAULT_INDEPENDENT_FILTER.ranges,...config?.ranges},preset:config?.preset==="Gap"?"Legacy Gap":config?.preset==="Triple"?"Default":config?.preset??DEFAULT_INDEPENDENT_FILTER.preset});
 export const validDraws=(draws:Draw[],game:LotteryGame|number)=>{
   const config=typeof game==="number"?LOTTERY_GAMES[game===55?"power655":"mega645"]:LOTTERY_GAMES[game];
   const {maxNumber,drawSize,specialMax}=config;

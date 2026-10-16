@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculatePortfolioCoverage, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, digitalRoot, exactTopNumbers, filterCombinationsByNumbers, filterCombinationsByScores, filterCompleteCalendarMonths, filterDraws, generateCandidateUniverse, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, percentileRank, round2, runPortfolioRollingBacktest, runRollingBacktest, scoreCandidateCombinations, selectExperimentalPowerPortfolio, selectFilteredPortfolio, selectPortfolio, validCombinationScoreRanges, weightedAverage } from "./analytics";
+import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculatePortfolioCoverage, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, calibrateProposalScore, digitalRoot, exactTopNumbers, filterCombinationsByNumbers, filterCombinationsByScores, filterCompleteCalendarMonths, filterDraws, generateCandidateUniverse, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, percentileRank, periodHalfLife, round2, runPortfolioRollingBacktest, runRollingBacktest, scoreCandidateCombinations, selectExperimentalPowerPortfolio, selectFilteredPortfolio, selectPortfolio, validCombinationScoreRanges, weightedAverage } from "./analytics";
 import type { CombinationScoreRanges } from "./analytics";
 import { DEFAULT_SETTINGS, INSIDE_SET, LOTTO535_INSIDE_NUMBERS } from "./domain";
 import type { Draw } from "./domain";
@@ -70,10 +70,26 @@ describe("analytics", () => {
   it("rounds technical values to hundredths", () => expect(round2(66.315)).toBe(66.32));
   it("shrinks subset frequencies toward the exact 6-of-M chance baseline",()=>{
     expect(chanceAdjustedSubsetScore(1,7,2,15)).toBe(50); // 1/7 is the pair baseline for 6 of 15
-    expect(chanceAdjustedSubsetScore(0,100,2,45)).toBeLessThan(50);
-    expect(chanceAdjustedSubsetScore(1,100,2,45)).toBeGreaterThan(chanceAdjustedSubsetScore(0,100,2,45));
+    expect(chanceAdjustedSubsetScore(3,1000,2,45)).toBeLessThan(50);
+    expect(chanceAdjustedSubsetScore(4,1000,2,45)).toBeGreaterThan(chanceAdjustedSubsetScore(3,1000,2,45));
     expect(chanceAdjustedSubsetScore(1,1000,3,45)).toBeLessThan(90);
     expect(chanceAdjustedSubsetScore(1,0,3,45)).toBe(50);
+    expect(chanceAdjustedSubsetScore(2,100,2,45)).toBe(50);
+    expect(chanceAdjustedSubsetScore(3,21,2,15)).toBe(50);
+  });
+  it("calibrates proposal scores toward chance",()=>{
+    expect(calibrateProposalScore(80)).toBe(74);
+    expect(calibrateProposalScore(20)).toBe(26);
+    expect(chanceAdjustedSubsetScore(6,45,1,45)).toBe(50);
+    expect(chanceAdjustedSubsetScore(6,55,1,55)).toBe(50);
+  });
+  it("derives weighted-frequency half-life from period and sample size",()=>{
+    expect(periodHalfLife("last20",20)).toBe(10);
+    expect(periodHalfLife("last50",50)).toBe(20);
+    expect(periodHalfLife("last100",100)).toBe(30);
+    expect(periodHalfLife("last1year",120)).toBe(37.5);
+    expect(periodHalfLife("all",500)).toBe(45);
+    expect(periodHalfLife("custom",30)).toBeGreaterThan(10);
   });
   it("builds a per-draw historical-frequency timeline with MA20", () => {
     const timeline=calculateOccurrenceTimeline(history.draws as Draw[]);
@@ -101,7 +117,7 @@ describe("analytics", () => {
     for(const window of [30,50,100]){
       const point=calculateScoreTimeline(source,DEFAULT_SETTINGS,45,[target.id],window)[0];
       const training=source.slice(-window-1,-1);
-      const [expected]=scoreCandidateCombinations([target.numbers],calculateSingles(training,DEFAULT_SETTINGS),calculatePairs(training),calculateTriples(training),DEFAULT_SETTINGS,training);
+      const [expected]=scoreCandidateCombinations([target.numbers],calculateSingles(training,DEFAULT_SETTINGS),calculatePairs(training),calculateTriples(training),DEFAULT_SETTINGS,training,[...INSIDE_SET],source.slice(0,-1));
       expect(point.total).toBe(round2(expected.totalScore));
       expect(calculateScoreTimeline(source,DEFAULT_SETTINGS,45,[target.id],window)).toHaveLength(1);
     }
@@ -132,7 +148,7 @@ describe("analytics", () => {
   it("builds a deterministic Power coverage portfolio without changing the first five",()=>{
     const training=(powerHistory.draws as Draw[]).slice(-51,-1);
     const singles=calculateSingles(training,DEFAULT_SETTINGS,55),pairs=calculatePairs(training,55),triples=calculateTriples(training,55);
-    const universe=generateCandidateUniverse(singles,pairs,triples,DEFAULT_SETTINGS,training);
+    const universe=generateCandidateUniverse(singles,pairs,triples,DEFAULT_SETTINGS,training,[...INSIDE_SET],training,50);
     const standard=selectPortfolio(universe,DEFAULT_SETTINGS,50);
     const experimental=selectExperimentalPowerPortfolio(universe,singles,pairs,triples,DEFAULT_SETTINGS,training);
     expect(experimental.slice(0,5).map(item=>item.numbers)).toEqual(standard.slice(0,5).map(item=>item.numbers));
@@ -165,11 +181,11 @@ describe("analytics", () => {
     expect(filterCombinationsByNumbers(items,"none")).toEqual([]);
   });
   it("applies inclusive score ranges only to matching suggested combinations",()=>{
-    const ranges:CombinationScoreRanges={singleScore:{min:"40",max:"50"},pairScore:{min:"",max:"10"},tripleScore:{min:"",max:""},structureScore:{min:"",max:""},totalScore:{min:"60",max:""}};
+    const ranges:CombinationScoreRanges={singleScore:{min:"40",max:"50"},pairScore:{min:"",max:"10"},gapScore:{min:"",max:""},structureScore:{min:"",max:""},totalScore:{min:"60",max:""}};
     const items=[
-      {singleScore:40,pairScore:10,tripleScore:0,structureScore:85,totalScore:60},
-      {singleScore:50.01,pairScore:5,tripleScore:0,structureScore:85,totalScore:65},
-      {singleScore:45,pairScore:11,tripleScore:0,structureScore:85,totalScore:65},
+      {singleScore:40,pairScore:10,gapScore:55,structureScore:85,totalScore:60},
+      {singleScore:50.01,pairScore:5,gapScore:55,structureScore:85,totalScore:65},
+      {singleScore:45,pairScore:11,gapScore:55,structureScore:85,totalScore:65},
     ];
     expect(validCombinationScoreRanges(ranges)).toBe(true);
     expect(filterCombinationsByScores(items,ranges)).toEqual([items[0]]);
@@ -196,6 +212,32 @@ describe("analytics", () => {
     expect(power.every(draw=>draw.numbers.length===6&&new Set(draw.numbers).size===6&&draw.numbers.every(number=>number>=1&&number<=55)&&draw.bonus!==undefined&&!draw.numbers.includes(draw.bonus)&&Number.isFinite(draw.jackpot)&&Number.isFinite(draw.jackpot2))).toBe(true);
   });
   it("generates valid, scored, diverse candidates", () => { const singles=calculateSingles(draws,DEFAULT_SETTINGS); const pairs=calculatePairs(draws); const triples=calculateTriples(draws); const candidates=generateCandidates(singles,pairs,triples,DEFAULT_SETTINGS); expect(candidates.every(c=>c.valid&&c.numbers.length===6&&Number.isFinite(c.totalScore))).toBe(true); });
+  it("scores a combination from the specified subset and empirical structure equations",()=>{
+    const source=[draws[0],{...draws[0],id:"repeat"}],singles=calculateSingles(source,DEFAULT_SETTINGS),pairs=calculatePairs(source),triples=calculateTriples(source);
+    const [candidate]=scoreCandidateCombinations([[1,2,3,4,5,6]],singles,pairs,triples,DEFAULT_SETTINGS,source);
+    const expectedSingle=source[0].numbers.reduce((sum,number)=>{
+      const item=singles[number-1];
+      return sum+.55*chanceAdjustedSubsetScore(item.totalCount,source.length,1,45,6)+.45*item.models.consensus.normalizedScore;
+    },0)/6;
+    expect(candidate.singleScore).toBeCloseTo(expectedSingle,2);
+    expect(candidate.structureScore).toBe(100);
+    expect(candidate.pairScore).toBe(50);
+    expect(candidate.tripleScore).toBe(50);
+    expect(candidate.totalScore).toBeGreaterThanOrEqual(0);
+    expect(candidate.totalScore).toBeLessThanOrEqual(100);
+    expect(candidate.gapScore).toBeGreaterThanOrEqual(0);
+    const alteredTriples=scoreCandidateCombinations([[1,2,3,4,5,6]],singles,pairs,triples.map(item=>({...item,count:item.count+20})),DEFAULT_SETTINGS,source)[0];
+    expect(alteredTriples.tripleScore).not.toBe(candidate.tripleScore);
+    expect(alteredTriples.totalScore).toBe(candidate.totalScore);
+  });
+  it("enforces the tighter overlap ceilings for the first 5 and 10 picks",()=>{
+    const source=history.draws as Draw[],settings=settingsForPreset(DEFAULT_SETTINGS,"Balanced"),singles=calculateSingles(source,settings),pairs=calculatePairs(source),triples=calculateTriples(source),universe=generateCandidateUniverse(singles,pairs,triples,settings,source),portfolio=selectPortfolio(universe,settings,10);
+    expect(portfolio).toHaveLength(10);
+    for(let i=0;i<portfolio.length;i++)for(let j=0;j<i;j++){
+      const overlap=portfolio[i].numbers.filter(number=>portfolio[j].numbers.includes(number)).length;
+      expect(overlap).toBeLessThanOrEqual(i<5?2:3);
+    }
+  },30000);
   it("keeps a viable structure-aware candidate pool with real history", () => { const real=history.draws as Draw[]; const singles=calculateSingles(real,DEFAULT_SETTINGS); const pairs=calculatePairs(real); const triples=calculateTriples(real); expect(generateCandidates(singles,pairs,triples,DEFAULT_SETTINGS).length).toBeGreaterThan(0); });
   it("filters suggested combinations to the configured digital roots",()=>{
     const real=history.draws as Draw[];
@@ -271,11 +313,11 @@ describe("analytics", () => {
     expect(result.rows[0].top10).toBe(0);
     expect(result.tieBreak).toBe("score desc, number asc");
   });
-  it("keeps active Gap scores distinct from V2 diagnostics under legacy presets",()=>{
+  it("uses the survival-style gap score for every preset",()=>{
     const source=(history.draws as Draw[]).slice(-50);
     const legacy=calculateSingles(source,settingsForPreset(DEFAULT_SETTINGS,"Default"));
     const v2=calculateSingles(source,settingsForPreset(DEFAULT_SETTINGS,"Gap + Frequency"));
-    expect(legacy.some((item,index)=>item.models.gap.normalizedScore!==item.gap.gapScore)).toBe(true);
+    expect(legacy.every((item,index)=>item.models.gap.normalizedScore===item.gap.gapScore)).toBe(true);
     expect(v2.every(item=>item.models.gap.normalizedScore===item.gap.gapScore)).toBe(true);
   });
   it("calculates advanced frequency and gap statistics from history",()=>{
@@ -318,7 +360,7 @@ describe("analytics", () => {
     const scores=scoreCandidateCombinations(universe.map(item=>item.numbers),singles,pairs,triples,settings,real);
     const target=universe.find(item=>!main.some(pick=>pick.numbers.join("-")===item.numbers.join("-")))!;
     expect(target).toBeDefined();
-    const narrow:CombinationScoreRanges={singleScore:{min:String(target.singleScore),max:String(target.singleScore)},pairScore:{min:String(target.pairScore),max:String(target.pairScore)},tripleScore:{min:String(target.tripleScore),max:String(target.tripleScore)},structureScore:{min:String(target.structureScore),max:String(target.structureScore)},totalScore:{min:String(target.totalScore),max:String(target.totalScore)}};
+    const narrow:CombinationScoreRanges={singleScore:{min:String(target.singleScore),max:String(target.singleScore)},pairScore:{min:String(target.pairScore),max:String(target.pairScore)},gapScore:{min:String(target.gapScore),max:String(target.gapScore)},structureScore:{min:String(target.structureScore),max:String(target.structureScore)},totalScore:{min:String(target.totalScore),max:String(target.totalScore)}};
     const result=selectFilteredPortfolio(universe,scores,main,narrow,settings,20);
     expect(result.rows.some(row=>row.proposal.numbers.join("-")===target.numbers.join("-"))).toBe(true);
     expect(main.map(item=>[item.numbers.join("-"),item.totalScore])).toEqual(original);
@@ -354,7 +396,12 @@ describe("analytics", () => {
     const gapSettings=settingsForPreset(DEFAULT_SETTINGS,"Gap + Frequency");
     const pairSettings=settingsForPreset(DEFAULT_SETTINGS,"Pair");
     expect(gapSettings.consensusWeights.gap).toBe(65);
-    expect(pairSettings.comboWeightsV2.pair).toBe(45);
+    expect(pairSettings.comboWeightsV2.pair).toBe(42);
+    for(const preset of ["Default","Balanced","Hot","Legacy Gap","Gap + Frequency","Pair"]){
+      const weights=Object.values(settingsForPreset(DEFAULT_SETTINGS,preset).comboWeightsV2);
+      expect(weights.reduce((sum,value)=>sum+value,0)).toBe(100);
+      expect(settingsForPreset(DEFAULT_SETTINGS,preset).comboWeightsV2).not.toHaveProperty("triple");
+    }
     const pairs=calculatePairs(real),triples=calculateTriples(real);
     const defaultTop=generateCandidates(calculateSingles(real,DEFAULT_SETTINGS),pairs,triples,DEFAULT_SETTINGS,real).slice(0,5).map(item=>item.numbers.join("-")).join("|");
     const gapTop=generateCandidates(calculateSingles(real,gapSettings),pairs,triples,gapSettings,real).slice(0,5).map(item=>item.numbers.join("-")).join("|");

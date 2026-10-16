@@ -16,7 +16,8 @@
   "gapPercentileAlertThreshold": 95,
   "gapZAlertThreshold": 2,
   "consensusWeights": { "frequency": 25, "momentum": 25, "gap": 25, "association": 25 },
-  "comboWeightsV2": { "consensus": 30, "pair": 20, "triple": 10, "structure": 25, "novelty": 15 },
+  "singleScoreWeights": { "frequency": 35, "zScore": 25, "momentum": 20, "gap": 20 },
+  "comboWeightsV2": { "single": 38, "pair": 28, "gap": 18, "structure": 10, "novelty": 6 },
   "backtestMinTrainingDraws": 50,
   "minCompletedGaps": 4,
   "gapModelVersion": "legacy"

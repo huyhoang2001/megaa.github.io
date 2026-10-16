@@ -4,6 +4,7 @@ import { INSIDE_SET } from "./domain";
 
 export const clamp = (n: number, min = 0, max = 100) => Math.min(max, Math.max(min, n));
 export const round2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100;
+export const calibrateProposalScore=(score:number)=>round2(50+.8*(score-50));
 export const pad = (n: number) => String(n).padStart(2, "0");
 export function weightedAverage(values:number[],weights:number[]):number{
   const total=weights.reduce((sum,weight)=>sum+weight,0);
@@ -18,9 +19,10 @@ export function weightedAverage(values:number[],weights:number[]):number{
  */
 export function chanceAdjustedSubsetScore(observed:number,drawCount:number,subsetSize:1|2|3,maxNumber:number,drawSize=6):number{
   if(drawCount<=0||maxNumber<drawSize||subsetSize>drawSize)return 50;
+  if(subsetSize>1&&observed<3)return 50;
   let baseline=1;
   for(let i=0;i<subsetSize;i++)baseline*=(drawSize-i)/(maxNumber-i);
-  const strength=20*subsetSize*subsetSize;
+  const strength=18*Math.pow(subsetSize,1.5)*Math.sqrt(100/Math.max(drawCount,10));
   const posterior=(Math.max(0,observed)+strength*baseline)/(drawCount+strength);
   const epsilon=1e-12;
   const logit=(value:number)=>Math.log(clamp(value,epsilon,1-epsilon)/(1-clamp(value,epsilon,1-epsilon)));
@@ -34,7 +36,7 @@ export function filterCombinationsByNumbers<T extends {numbers:number[]}>(items:
   if(!numbers.length||numbers.length>6)return [];
   return items.filter(item=>numbers.every(number=>item.numbers.includes(number)));
 }
-export const combinationScoreKeys=["singleScore","pairScore","tripleScore","structureScore","totalScore"] as const;
+export const combinationScoreKeys=["singleScore","pairScore","gapScore","structureScore","totalScore"] as const;
 export type {CombinationScoreRanges} from "./domain";
 export function validCombinationScoreRanges(ranges:CombinationScoreRanges):boolean{
   return combinationScoreKeys.every(key=>{
@@ -111,6 +113,23 @@ export function filterDraws(draws: Draw[], period: PeriodPreset, fromDate?: stri
   });
 }
 
+export function periodHalfLife(period:PeriodPreset,drawCount:number,configured=30){
+  const scale=configured/30;
+  if(period==="last10"||period==="last20")return 10*scale;
+  if(period==="last30"||period==="last40"||period==="last50"||period==="last60")return 20*scale;
+  if(period==="last100")return 30*scale;
+  if(period==="last6months")return 35*scale;
+  if(period==="last1year")return 37.5*scale;
+  if(period==="all")return 45*scale;
+  const anchors:[[number,number],[number,number],[number,number],[number,number]]=[[10,10],[50,20],[100,30],[300,45]];
+  const length=Math.max(0,drawCount);
+  const index=anchors.findIndex(([upper])=>length<=upper);
+  if(index<0)return 45*scale;
+  const [upper,value]=anchors[index];
+  const [lower,prior]=anchors[Math.max(0,index-1)];
+  return (index===0?value:prior+(value-prior)*(length-lower)/(upper-lower))*scale;
+}
+
 export function filterCompleteCalendarMonths(draws:Draw[],monthCount?:number){
   const ordered=[...draws].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
   if(!ordered.length)return ordered;
@@ -167,9 +186,9 @@ export function calculateGapDistribution(draws:Draw[],number:number,minCompleted
   const gapPercentile=percentileRank(gaps,currentGap);
   const gapZ=meanGap!==null&&stdGap!==null&&stdGap>0?zScore(currentGap,meanGap,stdGap):null;
   const gapCV=meanGap!==null&&meanGap>0&&stdGap!==null?stdGap/meanGap:null;
-  const gapSupport=Math.min(1,gaps.length/Math.max(1,minCompletedGaps));
-  const raw=.5*(gapPercentile??50)+.25*(gapZ===null?50:clamp(Math.max(0,gapZ)/3*100))+.25*(gapCV===null?50:100/(1+gapCV));
-  return {gaps,currentGap,meanGap,medianGap:gaps.length?median(gaps):null,minGap:gaps.length?Math.min(...gaps):null,maxGap:gaps.length?Math.max(...gaps):null,maxCompletedGap:gaps.length?Math.max(...gaps):null,stdGap,q1:gaps.length?quantile(gaps,.25):null,q3:gaps.length?quantile(gaps,.75):null,gapPercentile,gapZ,gapCV,completedGapCount:gaps.length,gapSupport,gapCensored:appearances.length===0,gapScore:round2(50+gapSupport*(raw-50))};
+  const gapSupport=Math.min(1,gaps.length/8);
+  const gapScore=50+50*normalCdf(gapZ??0)*gapSupport;
+  return {gaps,currentGap,meanGap,medianGap:gaps.length?median(gaps):null,minGap:gaps.length?Math.min(...gaps):null,maxGap:gaps.length?Math.max(...gaps):null,maxCompletedGap:gaps.length?Math.max(...gaps):null,stdGap,q1:gaps.length?quantile(gaps,.25):null,q3:gaps.length?quantile(gaps,.75):null,gapPercentile,gapZ,gapCV,completedGapCount:gaps.length,gapSupport,gapCensored:appearances.length===0,gapScore:round2(gapScore)};
 }
 export function calculateTransitionMatrix(draws:Draw[],maxNumber=45){const counts=Array.from({length:maxNumber},()=>Array(maxNumber).fill(0));const eligible=Array(maxNumber).fill(0);for(let i=0;i<draws.length-1;i++)for(const a of draws[i].numbers){eligible[a-1]++;for(const b of draws[i+1].numbers)counts[a-1][b-1]++;}return {counts,eligible};}
 export function calculateTransitionLift(draws:Draw[],a:number,b:number,maxNumber=45){const {counts,eligible}=calculateTransitionMatrix(draws,maxNumber);const rate=eligible[a-1]?counts[a-1][b-1]/eligible[a-1]:0;const baseline=draws.length?draws.filter(draw=>draw.numbers.includes(b)).length/draws.length:0;return baseline?rate/baseline:0;}
@@ -178,7 +197,7 @@ export function calculateStructureDistribution(draws:Draw[],maxNumber=45){const 
 export function calculateNoveltyScore(numbers:number[],history:Draw[]){const size=numbers.length,maxHistoricalOverlap=history.length?Math.max(...history.map(draw=>numbers.filter(number=>draw.numbers.includes(number)).length)):0;return {maxHistoricalOverlap,score:clamp(100-maxHistoricalOverlap/size*100)};}
 export function detectStatisticalAnomalies(singles:SingleNumberStats[],settings:AnalysisSettings){return singles.flatMap(item=>{const result:{number:number;type:string;severity:string;value:number;explanation:string}[]=[];if(Math.abs(item.frequencyZ)>=(settings.frequencyZAlertThreshold??2))result.push({number:item.number,type:item.frequencyZ>0?"FREQUENCY_HIGH":"FREQUENCY_LOW",severity:Math.abs(item.frequencyZ)>=3?"STRONG":"WARNING",value:item.frequencyZ,explanation:`Historical frequency Z ${round2(item.frequencyZ)}`});const percentile=item.gap.gapPercentile,z=item.gap.gapZ;if(!item.gap.gapCensored&&((percentile!==null&&percentile>=(settings.gapPercentileAlertThreshold??95))||(z!==null&&z>=(settings.gapZAlertThreshold??2))))result.push({number:item.number,type:"GAP_HIGH",severity:percentile!==null&&percentile>=99?"STRONG":"WARNING",value:percentile??0,explanation:`Current gap is unusually long relative to this number's history (${percentile===null?"N/A":round2(percentile)}th percentile)`});if(Math.abs(item.recentZ30)>=(settings.recentZAlertThreshold??2))result.push({number:item.number,type:item.recentZ30>0?"RECENT_HIGH":"RECENT_LOW",severity:Math.abs(item.recentZ30)>=3?"STRONG":"WARNING",value:item.recentZ30,explanation:`Recent historical frequency Z ${round2(item.recentZ30)}`});return result;});}
 
-export function calculateSingles(draws: Draw[], settings: AnalysisSettings,maxNumber=45,insideNumbers:readonly number[]= [...INSIDE_SET]): SingleNumberStats[] {
+export function calculateSingles(draws: Draw[], settings: AnalysisSettings,maxNumber=45,insideNumbers:readonly number[]= [...INSIDE_SET],period:PeriodPreset="custom"): SingleNumberStats[] {
   const ordered=[...draws].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
   const totalDraws=ordered.length;
   const p=(ordered[0]?.numbers.length??6)/maxNumber;
@@ -201,7 +220,7 @@ export function calculateSingles(draws: Draw[], settings: AnalysisSettings,maxNu
     const trend30 = frequencyRate > 0 ? recentRate / frequencyRate : 0;
     const gapRatio = averageGap !== null&&averageGap>0 ? currentGap / averageGap : null;
     const state: NumberState = gap.gapCensored?"DROUGHT":trend30 >= 1.3 && gapRatio !== null&&gapRatio < .8 ? "HOT" : gapRatio !== null&&gapRatio >= 2 ? "DROUGHT" : gapRatio !== null&&gapRatio >= 1.5 ? "DUE" : trend30 < .8 ? "COOL" : "NEUTRAL";
-    const lambda=Math.log(2)/Math.max(1,settings.weightedFrequencyHalfLife ?? 30);
+    const lambda=Math.log(2)/Math.max(1,periodHalfLife(period,totalDraws,settings.weightedFrequencyHalfLife ?? 30));
     const weightedFrequency=ordered.reduce((sum,draw,drawIndex)=>sum+(draw.numbers.includes(number)?Math.exp(-lambda*(totalDraws-1-drawIndex)):0),0);
     const ratio10vs30=ratio(rolling.last10,Math.min(10,totalDraws),rolling.last30,Math.min(30,totalDraws));
     const ratio10vs50=ratio(rolling.last10,Math.min(10,totalDraws),rolling.last50,Math.min(50,totalDraws));
@@ -223,14 +242,15 @@ export function calculateSingles(draws: Draw[], settings: AnalysisSettings,maxNu
   const scored=raw.map((item,index)=>{
     const frequencyScore=.35*clamp(50+item.frequencyZ*15)+.40*weightedScores[index]+.25*rollingRanks[index];
     const momentumScore=.5*clamp(item.momentum.ratio10vs30/1.5*100)+.3*clamp(item.momentum.ratio30vs100/1.5*100)+.2*clamp(50+item.recentZ30*15);
-    const gapScore=settings.gapModelVersion==="v2"?item.gap.gapScore:.5*(item.gap.gapPercentile??50)+.25*clamp(Math.abs(item.gap.gapZ??0)/3*100)+.25*(item.gap.gapCV===null?50:clamp(100/(1+item.gap.gapCV)));
+    const gapScore=item.gap.gapScore;
     const supportConfidence:Confidence=totalDraws>=100?"HIGH":totalDraws>=50?"MEDIUM":"LOW";
     return {...item,frequencySignal:signal(item.frequencyZ,frequencyScore,[`Observed ${item.totalCount}; expected ${round2(item.expectedCount)}`,`Weighted frequency ${round2(item.weightedFrequency)}`],supportConfidence),momentumSignal:signal(item.momentum.ratio10vs30,momentumScore,[`${item.momentum.label}: 10/30 ratio ${round2(item.momentum.ratio10vs30)}`],supportConfidence),gapSignal:signal(item.gap.gapPercentile??50,gapScore,[`Gap percentile ${item.gap.gapPercentile===null?"N/A":`${round2(item.gap.gapPercentile)}%`}`,`Completed gaps ${item.gap.completedGapCount}; ${item.gap.gapCensored?"censored":"observed in window"}`],item.gap.completedGapCount>=10?supportConfidence:"LOW"),associationSignal:signal(associationRaw[index],associationScores[index],[`Supported pair-lift signal ${round2(associationRaw[index])}`],associationRaw[index]?supportConfidence:"LOW")};
   });
   for(const key of ["frequencySignal","momentumSignal","gapSignal","associationSignal"] as const){const orderedSignals=[...scored].sort((a,b)=>b[key].normalizedScore-a[key].normalizedScore||a.number-b.number);let rank=0,previous:number|undefined;const values=orderedSignals.map(item=>item[key].normalizedScore);orderedSignals.forEach(item=>{if(item[key].normalizedScore!==previous){rank++;previous=item[key].normalizedScore;}item[key].rank=rank;item[key].percentileRank=round2(percentileRank(values,item[key].normalizedScore)??50);});}
   const consensusWeights=settings.consensusWeights??{frequency:25,momentum:25,gap:25,association:25};
   const componentTop10=(["frequencySignal","momentumSignal","gapSignal","associationSignal"] as const).map(key=>exactTopNumbers(scored.map(item=>({number:item.number,score:item[key].normalizedScore})),10));
-  const withConsensus=scored.map(item=>{const components=[item.frequencySignal,item.momentumSignal,item.gapSignal,item.associationSignal];const consensus=weightedAverage(components.map(component=>component.percentileRank),[consensusWeights.frequency,consensusWeights.momentum,consensusWeights.gap,consensusWeights.association]);const agreement=componentTop10.filter(top=>top.has(item.number)).length;const confidence:Confidence=agreement>=3&&totalDraws>=100&&item.associationSignal.confidence!=="LOW"?"HIGH":agreement>=2&&totalDraws>=50?"MEDIUM":"LOW";return {...item,models:{frequency:item.frequencySignal,momentum:item.momentumSignal,gap:item.gapSignal,association:item.associationSignal,consensus:signal(consensus,consensus,[`${agreement}/4 component models place this number in the Top 10`],confidence)},modelAgreement:agreement,confidence,technicalScore:round2(consensus),rank:0};});
+  const singleWeights=settings.singleScoreWeights??{frequency:35,zScore:25,momentum:20,gap:20};
+  const withConsensus=scored.map((item,index)=>{const components=[item.frequencySignal,item.momentumSignal,item.gapSignal,item.associationSignal];const consensus=weightedAverage(components.map(component=>component.percentileRank),[consensusWeights.frequency,consensusWeights.momentum,consensusWeights.gap,consensusWeights.association]);const agreement=componentTop10.filter(top=>top.has(item.number)).length;const confidence:Confidence=agreement>=3&&totalDraws>=100&&item.associationSignal.confidence!=="LOW"?"HIGH":agreement>=2&&totalDraws>=50?"MEDIUM":"LOW";const technicalScore=weightedAverage([weightedScores[index],clamp(50+15*item.frequencyZ),item.momentumSignal.normalizedScore,item.gapSignal.normalizedScore],[singleWeights.frequency,singleWeights.zScore,singleWeights.momentum,singleWeights.gap]);return {...item,models:{frequency:item.frequencySignal,momentum:item.momentumSignal,gap:item.gapSignal,association:item.associationSignal,consensus:signal(consensus,consensus,[`${agreement}/4 component models place this number in the Top 10`],confidence)},modelAgreement:agreement,confidence,technicalScore:round2(technicalScore),rank:0};});
   const ranked=[...withConsensus].sort((a,b)=>b.technicalScore-a.technicalScore||a.number-b.number);
   let consensusRank=0,previousConsensus:number|undefined;const consensusValues=ranked.map(item=>item.technicalScore);
   ranked.forEach(item=>{if(item.technicalScore!==previousConsensus){consensusRank++;previousConsensus=item.technicalScore;}item.rank=consensusRank;item.models.consensus.rank=consensusRank;item.models.consensus.percentileRank=round2(percentileRank(consensusValues,item.technicalScore)??50);});
@@ -275,48 +295,56 @@ export function calculateTriples(draws: Draw[],maxNumber=45,insideNumbers:readon
   return [...map.entries()].map(([key, item]) => {const expected=item.numbers.reduce((product,n)=>product*((counts.get(n)??0)/Math.max(1,draws.length)),1);return { ...item, key, rate: draws.length ? item.count / draws.length : 0,lift:expected?(item.count/draws.length)/expected:0,confidence:pairConfidence(item.count), insideCount: item.numbers.filter(n => insideSet.has(n)).length, outsideCount: item.numbers.filter(n => !insideSet.has(n)).length, evenCount: item.numbers.filter(n => n % 2 === 0).length, oddCount: item.numbers.filter(n => n % 2 !== 0).length, rank: 0 };}).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)).map((x, i) => ({ ...x, rank: i + 1 }));
 }
 
-export function scoreCandidateCombinations(numberSets:number[][],singles:SingleNumberStats[],pairs:PairStats[],triples:TripleStats[],settings:AnalysisSettings,history:Draw[]=[],insideNumbers:readonly number[]= [...INSIDE_SET]):CandidateCombination[]{
+export function scoreCandidateCombinations(numberSets:number[][],singles:SingleNumberStats[],pairs:PairStats[],triples:TripleStats[],settings:AnalysisSettings,history:Draw[]=[],insideNumbers:readonly number[]= [...INSIDE_SET],structureHistory:Draw[]=history):CandidateCombination[]{
   const maxNumber=singles.length||45;
   const drawSize=history[0]?.numbers.length??numberSets[0]?.length??6,insideSet=new Set(insideNumbers);
   const observedDraws=history.length||singles.reduce((sum,item)=>sum+item.totalCount,0)/drawSize;
+  const subsetCache=new Map<string,number>();
+  const subsetScore=(observed:number,size:1|2|3)=>{const key=`${size}:${observed}`;if(!subsetCache.has(key))subsetCache.set(key,chanceAdjustedSubsetScore(observed,observedDraws,size,maxNumber,drawSize));return subsetCache.get(key)!;};
   const singleMap = new Map(singles.map(x => [x.number,{
-    chance:chanceAdjustedSubsetScore(x.totalCount,observedDraws,1,maxNumber,drawSize),
+    chance:subsetScore(x.totalCount,1),
     consensus:x.models.consensus.normalizedScore,
   }]));
   const pairMap = new Map(pairs.map(x => [x.key, x]));
   const tripleMap = new Map(triples.map(x => [x.key, x]));
-  const w = settings.comboWeightsV2??{consensus:30,pair:20,triple:10,structure:25,novelty:15};
+  const w = settings.comboWeightsV2??{single:38,pair:28,gap:18,structure:10,novelty:6};
   const historySets=history.map(draw=>new Set(draw.numbers));
+  const structures=structureHistory.map(draw=>calculateDrawStructure(draw,maxNumber,insideNumbers));
+  const structureStats={mean:mean(structures.map(item=>item.sum)),stdDev:stdDev(structures.map(item=>item.sum))};
+  const parityCounts=new Map<number,number>(),insideCounts=new Map<number,number>();
+  structures.forEach(item=>{parityCounts.set(item.evenCount,(parityCounts.get(item.evenCount)??0)+1);insideCounts.set(item.insideCount,(insideCounts.get(item.insideCount)??0)+1);});
   return numberSets.map(numbers => {
     const total = numbers.reduce((a, b) => a + b, 0);
     const root = digitalRoot(total);
     const evenCount = numbers.filter(n => n % 2 === 0).length;
     const insideCount = numbers.filter(n => insideSet.has(n)).length;
-    const pairScore = combinations(numbers, 2).reduce((sum, pair) => {
+    const candidatePairs=combinations(numbers,2),candidateTriples=combinations(numbers,3);
+    const pairScore = candidatePairs.reduce((sum, pair) => {
       const stat=pairMap.get([...pair].sort((a,b)=>a-b).map(pad).join("-"));
-      return sum+chanceAdjustedSubsetScore(stat?.count??0,observedDraws,2,maxNumber,drawSize);
-    }, 0) / combinations(numbers,2).length;
-    const tripleScore = combinations(numbers, 3).reduce((sum, triple) => {
+      return sum+subsetScore(stat?.count??0,2);
+    }, 0) / candidatePairs.length;
+    const tripleScore = candidateTriples.reduce((sum, triple) => {
       const stat=tripleMap.get([...triple].sort((a,b)=>a-b).map(pad).join("-"));
-      return sum+chanceAdjustedSubsetScore(stat?.count??0,observedDraws,3,maxNumber,drawSize);
-    }, 0) / combinations(numbers,3).length;
-    // Blend calibrated frequency evidence with consensus so scoring presets
-    // can continue to emphasize gap, momentum, and association signals.
+      return sum+subsetScore(stat?.count??0,3);
+    }, 0) / candidateTriples.length;
     const singleScore = numbers.reduce((sum, n) => {
       const item=singleMap.get(n);
-      return sum+(item?(item.chance+item.consensus)/2:50);
+      return sum+(item?.chance===undefined?50:.55*item.chance+.45*item.consensus);
     }, 0) / drawSize;
-    // Uniform draws provide no evidence for preferring any particular digital root.
-    const structureRaw = 0;
-    const parityCenter=Math.ceil(drawSize/2),parity=Math.abs(evenCount-parityCenter)===0?30:Math.abs(evenCount-parityCenter)===1?25:0;
-    const insideCenter=Math.round(drawSize*insideNumbers.length/maxNumber),distribution=drawSize===6?(insideCount===4?30:insideCount===3?25:0):Math.abs(insideCount-insideCenter)===0?30:Math.abs(insideCount-insideCenter)===1?25:0;
-    const structureScore = structureRaw + parity + distribution + (total >= settings.minTotal ? 10 : 0);
+    const gapScore=numbers.reduce((sum,n)=>sum+(singles[n-1]?.gap.gapScore??50),0)/drawSize;
+    const sumScore=structures.length?(structureStats.stdDev?100*Math.exp(-.5*((total-structureStats.mean)/structureStats.stdDev)**2):Number(total===structureStats.mean)*100):50;
+    const parityScore=structures.length?100*(parityCounts.get(evenCount)??0)/structures.length:50;
+    const insideScore=structures.length?100*(insideCounts.get(insideCount)??0)/structures.length:50;
+    const structureScore=.5*sumScore+.3*parityScore+.2*insideScore;
     const valid = total >= settings.minTotal && settings.allowedDigitalRoots.includes(root) && settings.allowedParity.includes(`${evenCount}/${drawSize-evenCount}`) && settings.allowedInsideOutside.includes(`${insideCount}/${drawSize-insideCount}`);
     const maxHistoricalOverlap=historySets.length?Math.max(...historySets.map(draw=>numbers.reduce((count,number)=>count+Number(draw.has(number)),0))):0;
-    const noveltyScore=history.length?clamp(100-maxHistoricalOverlap/drawSize*100):100;
-    const totalScore = weightedAverage([singleScore,pairScore,tripleScore,structureScore,noveltyScore],[w.consensus,w.pair,w.triple,w.structure,w.novelty]);
-    const confidence:Confidence=numbers.filter(n=>(singles[n-1]?.confidence??"LOW")!=="LOW").length>=4?"MEDIUM":"LOW";
-    return { numbers, total, digitalRoot: root, evenCount, oddCount: drawSize-evenCount, insideCount, outsideCount: drawSize-insideCount, singleScore, pairScore, tripleScore, structureScore, noveltyScore,maxHistoricalOverlap,totalScore,confidence,valid };
+    const noveltyScore=history.length?clamp(100-.85*maxHistoricalOverlap/drawSize*100):100;
+    const proposalScore=weightedAverage([singleScore,pairScore,gapScore,structureScore,noveltyScore],[w.single,w.pair,w.gap,w.structure,w.novelty]);
+    const totalScore=calibrateProposalScore(proposalScore);
+    const averagePairSupport=candidatePairs.reduce((sum,pair)=>sum+(pairMap.get([...pair].sort((a,b)=>a-b).map(pad).join("-"))?.count??0),0)/Math.max(1,candidatePairs.length);
+    const dataSupport:Confidence=observedDraws>=80&&averagePairSupport>=4?"HIGH":observedDraws>=40?"MEDIUM":"LOW";
+    const confidence:Confidence=dataSupport;
+    return { numbers, total, digitalRoot: root, evenCount, oddCount: drawSize-evenCount, insideCount, outsideCount: drawSize-insideCount, singleScore, pairScore, gapScore, tripleScore, structureScore, noveltyScore,maxHistoricalOverlap,totalScore,confidence,dataSupport,valid };
   });
 }
 
@@ -330,7 +358,7 @@ export function calculateScoreTimeline(draws:Draw[],settings:AnalysisSettings,ma
     const singles=calculateSingles(history,settings,maxNumber,insideNumbers);
     const pairs=calculatePairs(history,maxNumber,insideNumbers);
     const triples=calculateTriples(history,maxNumber,insideNumbers);
-    const [score]=scoreCandidateCombinations([draw.numbers],singles,pairs,triples,settings,history,insideNumbers);
+    const [score]=scoreCandidateCombinations([draw.numbers],singles,pairs,triples,settings,history,insideNumbers,ordered.slice(0,index));
     return {id:draw.id,date:draw.date,single:round2(score.singleScore),pair:round2(score.pairScore),triple:round2(score.tripleScore),structure:round2(score.structureScore),total:round2(score.totalScore)};
   });
   const movingAverage=(key:"single"|"pair"|"triple"|"structure"|"total",index:number)=>{
@@ -347,18 +375,19 @@ export function calculateScoreTimeline(draws:Draw[],settings:AnalysisSettings,ma
   }));
 }
 
-export function generateCandidateUniverse(singles: SingleNumberStats[], pairs: PairStats[], triples: TripleStats[], settings: AnalysisSettings, history:Draw[]=[],insideNumbers:readonly number[]= [...INSIDE_SET]): CandidateCombination[] {
+export function generateCandidateUniverse(singles: SingleNumberStats[], pairs: PairStats[], triples: TripleStats[], settings: AnalysisSettings, history:Draw[]=[],insideNumbers:readonly number[]= [...INSIDE_SET],structureHistory:Draw[]=history,requestedCount=settings.topCombinationCount): CandidateCombination[] {
   const ranked = [...singles].sort((a, b) => b.technicalScore - a.technicalScore || a.number - b.number);
+  const maxNumber=singles.length||45;
   // The inside preference can otherwise fill the entire pool with inside numbers,
   // making the required 4/2 or 3/3 structure mathematically impossible.
   const insideAvailable=ranked.filter(item=>item.inside).length;
-  const insideTarget = Math.round(settings.candidatePoolSize * insideAvailable / Math.max(1,ranked.length));
+  const poolSize=Math.min(maxNumber,Math.max(settings.candidatePoolSize,requestedCount>=5?15:settings.candidatePoolSize));
   const pool = [
-    ...ranked.filter(x => x.inside).slice(0, insideTarget),
-    ...ranked.filter(x => !x.inside).slice(0, settings.candidatePoolSize - insideTarget),
+    ...ranked.filter(x => x.inside).slice(0, Math.round(poolSize * insideAvailable / Math.max(1,ranked.length))),
+    ...ranked.filter(x => !x.inside).slice(0, poolSize-Math.round(poolSize * insideAvailable / Math.max(1,ranked.length))),
   ].map(x => x.number).sort((a, b) => a - b);
   const drawSize=history[0]?.numbers.length??6,insideSet=new Set(insideNumbers);
-  const candidates=scoreCandidateCombinations(combinations(pool,drawSize),singles,pairs,triples,settings,history,insideNumbers).filter(x=>x.valid).sort((a,b)=>b.totalScore-a.totalScore);
+  const candidates=scoreCandidateCombinations(combinations(pool,drawSize),singles,pairs,triples,settings,history,insideNumbers,structureHistory).filter(x=>x.valid).sort((a,b)=>b.totalScore-a.totalScore);
   const rootsPresent=new Set(candidates.map(candidate=>candidate.digitalRoot));
   const missingRoots=settings.allowedDigitalRoots.filter(root=>!rootsPresent.has(root));
   const parityPresent=new Set(candidates.map(candidate=>`${candidate.evenCount}/${candidate.oddCount}`));
@@ -370,7 +399,6 @@ export function generateCandidateUniverse(singles: SingleNumberStats[], pairs: P
     ...missingParity.map(parity=>[`parity:${parity}`,0] as [string,number]),
   ]);
   if(targetCounts.size){
-    const maxNumber=singles.length||45;
     for(const source of candidates.slice(0,60)){
       for(let index=0;index<source.numbers.length;index++) for(let number=1;number<=maxNumber;number++){
         if(source.numbers.includes(number))continue;
@@ -396,30 +424,39 @@ export function generateCandidateUniverse(singles: SingleNumberStats[], pairs: P
       if([...targetCounts.values()].every(count=>count>=12))break;
     }
   }
-  const alternatives=rootAlternatives.length?scoreCandidateCombinations(rootAlternatives,singles,pairs,triples,settings,history,insideNumbers).filter(candidate=>candidate.valid):[];
+  const alternatives=rootAlternatives.length?scoreCandidateCombinations(rootAlternatives,singles,pairs,triples,settings,history,insideNumbers,structureHistory).filter(candidate=>candidate.valid):[];
   return [...candidates,...alternatives].sort((a,b)=>b.totalScore-a.totalScore||a.numbers.join("-").localeCompare(b.numbers.join("-"))).map((item,index)=>({...item,candidateRank:index+1}));
 }
 
 export function selectPortfolio(allCandidates:CandidateCombination[],settings:AnalysisSettings,count=Math.max(20,settings.topCombinationCount)):CandidateCombination[]{
-  const selected: CandidateCombination[] = [];
-  // Seed the list with the strongest compatible candidate from each allowed root.
-  for(const root of settings.allowedDigitalRoots){
-    const candidate=allCandidates.find(item=>item.digitalRoot===root&&selected.every(existing=>item.numbers.filter(n=>existing.numbers.includes(n)).length<=settings.maxCombinationOverlap));
-    if(candidate)selected.push(candidate);
-  }
+  const candidates=[...allCandidates].sort((a,b)=>b.totalScore-a.totalScore||a.numbers.join("-").localeCompare(b.numbers.join("-")));
+  const selected:CandidateCombination[]=[];
+  const nextLimit=()=>Math.min(settings.maxCombinationOverlap,selected.length<5?2:selected.length<10?3:settings.maxCombinationOverlap);
+  const feasible=(filter:(candidate:CandidateCombination)=>boolean=()=>true)=>candidates.filter(candidate=>!selected.includes(candidate)&&filter(candidate)&&selected.every(existing=>candidate.numbers.filter(number=>existing.numbers.includes(number)).length<=nextLimit()));
+  const pickByUtility=(items:CandidateCombination[])=>{
+    const used=new Set(selected.flatMap(item=>item.numbers));
+    return items.reduce((best,candidate)=>{
+      const utility=candidate.totalScore+10*candidate.numbers.filter(number=>!used.has(number)).length-9*mean(selected.map(existing=>candidate.numbers.filter(number=>existing.numbers.includes(number)).length));
+      const bestUtility=best.totalScore+10*best.numbers.filter(number=>!used.has(number)).length-9*mean(selected.map(existing=>best.numbers.filter(number=>existing.numbers.includes(number)).length));
+      return utility>bestUtility?candidate:best;
+    });
+  };
+  if(count>0&&candidates.length)selected.push(candidates[0]);
   for(const parity of settings.allowedParity){
-    const candidate=allCandidates.find(item=>`${item.evenCount}/${item.oddCount}`===parity&&selected.every(existing=>item.numbers.filter(n=>existing.numbers.includes(n)).length<=settings.maxCombinationOverlap));
-    if(candidate&&!selected.includes(candidate))selected.push(candidate);
+    if(selected.length>=count)break;
+    if(selected.some(item=>`${item.evenCount}/${item.oddCount}`===parity))continue;
+    const options=feasible(item=>`${item.evenCount}/${item.oddCount}`===parity);
+    if(options.length)selected.push(pickByUtility(options));
   }
-  for (const candidate of allCandidates) {
-    if(selected.includes(candidate))continue;
-    if (selected.every(existing => candidate.numbers.filter(n => existing.numbers.includes(n)).length <= settings.maxCombinationOverlap)) selected.push(candidate);
-    if (selected.length >= count) break;
+  while(selected.length<count){
+    const options=feasible();
+    if(!options.length)break;
+    selected.push(pickByUtility(options));
   }
-  return selected.slice(0,count).sort((a,b)=>b.totalScore-a.totalScore||a.numbers.join("-").localeCompare(b.numbers.join("-"))).map((x, i) => ({ ...x, rank: i + 1 }));
+  return selected.map((item,index)=>({...item,rank:index+1}));
 }
 
-export function selectExperimentalPowerPortfolio(allCandidates:CandidateCombination[],singles:SingleNumberStats[],pairs:PairStats[],triples:TripleStats[],settings:AnalysisSettings,history:Draw[],count=50):CandidateCombination[]{
+export function selectExperimentalPowerPortfolio(allCandidates:CandidateCombination[],singles:SingleNumberStats[],pairs:PairStats[],triples:TripleStats[],settings:AnalysisSettings,history:Draw[],count=50,structureHistory:Draw[]=history,insideNumbers:readonly number[]= [...INSIDE_SET]):CandidateCombination[]{
   const firstFive=selectPortfolio(allCandidates,settings,50).slice(0,5).map(item=>({...item,selectionReason:"score" as const}));
   if(!firstFive.length)return [];
   const experimentalSettings={...settings,allowedInsideOutside:[...new Set([...settings.allowedInsideOutside,"2/4"])]};
@@ -442,7 +479,7 @@ export function selectExperimentalPowerPortfolio(allCandidates:CandidateCombinat
     seen.add(ticketKey);
     sampled.push(ticket);
   }
-  const wide=scoreCandidateCombinations(sampled,singles,pairs,triples,experimentalSettings,history).filter(item=>item.valid);
+  const wide=scoreCandidateCombinations(sampled,singles,pairs,triples,experimentalSettings,history,insideNumbers,structureHistory).filter(item=>item.valid);
   const candidates=[...allCandidates,...wide];
   const newNumberWeight=100;
   const maxRawUtility=6*(newNumberWeight+1);
@@ -466,8 +503,8 @@ export function selectExperimentalPowerPortfolio(allCandidates:CandidateCombinat
   return selected.map((item,index)=>({...item,rank:index+1}));
 }
 
-export function generateCandidates(singles: SingleNumberStats[], pairs: PairStats[], triples: TripleStats[], settings: AnalysisSettings, history:Draw[]=[],insideNumbers:readonly number[]= [...INSIDE_SET]): CandidateCombination[] {
-  return selectPortfolio(generateCandidateUniverse(singles,pairs,triples,settings,history,insideNumbers),settings);
+export function generateCandidates(singles: SingleNumberStats[], pairs: PairStats[], triples: TripleStats[], settings: AnalysisSettings, history:Draw[]=[],insideNumbers:readonly number[]= [...INSIDE_SET],structureHistory:Draw[]=history): CandidateCombination[] {
+  return selectPortfolio(generateCandidateUniverse(singles,pairs,triples,settings,history,insideNumbers,structureHistory,Math.max(20,settings.topCombinationCount)),settings);
 }
 
 export type FilteredCombination={proposal:CandidateCombination;filter:CandidateCombination;mainRank:number|null;filteredRank:number};
@@ -529,11 +566,11 @@ export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:Bac
   const predictionCount=Math.max(1,options.predictionCount);
   const maxNumber=options.maxNumber??45;
   const insideNumbers=options.insideNumbers??[...INSIDE_SET];
-  const evaluate=(history:Draw[],actual:number[],targetId:string,date:string,manualProposedSets?:number[][])=>{
+  const evaluate=(history:Draw[],actual:number[],targetId:string,date:string,manualProposedSets?:number[][],structureHistory:Draw[]=history)=>{
     const singles=calculateSingles(history,settings,maxNumber,insideNumbers);
     const pairs=calculatePairs(history,maxNumber,insideNumbers);
     const triples=calculateTriples(history,maxNumber,insideNumbers);
-    const candidates=manualProposedSets?.length?scoreCandidateCombinations(manualProposedSets,singles,pairs,triples,settings,history,insideNumbers):options.powerSuggestionMode==="experimental"&&maxNumber===55?selectExperimentalPowerPortfolio(generateCandidateUniverse(singles,pairs,triples,settings,history),singles,pairs,triples,settings,history).slice(0,predictionCount):generateCandidates(singles,pairs,triples,settings,history,insideNumbers).slice(0,predictionCount);
+    const candidates=manualProposedSets?.length?scoreCandidateCombinations(manualProposedSets,singles,pairs,triples,settings,history,insideNumbers,structureHistory):options.powerSuggestionMode==="experimental"&&maxNumber===55?selectExperimentalPowerPortfolio(generateCandidateUniverse(singles,pairs,triples,settings,history,insideNumbers,structureHistory),singles,pairs,triples,settings,history,predictionCount,structureHistory,insideNumbers):generateCandidates(singles,pairs,triples,settings,history,insideNumbers,structureHistory).slice(0,predictionCount);
     const predictions:BacktestPrediction[]=candidates.map(candidate=>{
       const key=candidate.numbers.map(pad).join("-");
       const count=history.filter(draw=>draw.numbers.map(pad).join("-")===key).length;
@@ -552,7 +589,7 @@ export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:Bac
   targets.forEach(target=>{
     const targetIndex=ordered.indexOf(target);
     const history=ordered.slice(Math.max(0,targetIndex-trainingDraws),targetIndex);
-    if(history.length===trainingDraws)evaluate(history,target.numbers,target.id,target.date,manualProposedSets);
+    if(history.length===trainingDraws)evaluate(history,target.numbers,target.id,target.date,manualProposedSets,ordered.slice(0,targetIndex));
   });
   return {distribution,average:rows.length?totalMatches/rows.length:0,best,tests:rows.length,rows,skippedTrainingCount:targets.length-rows.length,trainingWindow:trainingDraws};
 }
@@ -572,8 +609,9 @@ export function runPortfolioRollingBacktest(draws:Draw[],settings:AnalysisSettin
     const singles=calculateSingles(training,settings,options.maxNumber,insideNumbers);
     const pairs=calculatePairs(training,options.maxNumber,insideNumbers);
     const triples=calculateTriples(training,options.maxNumber,insideNumbers);
-    const universe=generateCandidateUniverse(singles,pairs,triples,settings,training,insideNumbers);
-    const portfolio=(options.powerSuggestionMode==="experimental"&&options.maxNumber===55?selectExperimentalPowerPortfolio(universe,singles,pairs,triples,settings,training):selectPortfolio(universe,settings,50)).slice(0,options.predictionCount);
+    const structureHistory=ordered.slice(0,index);
+    const universe=generateCandidateUniverse(singles,pairs,triples,settings,training,insideNumbers,structureHistory);
+    const portfolio=(options.powerSuggestionMode==="experimental"&&options.maxNumber===55?selectExperimentalPowerPortfolio(universe,singles,pairs,triples,settings,training,options.predictionCount,structureHistory,insideNumbers):selectPortfolio(universe,settings,50)).slice(0,options.predictionCount);
     const bestMatches=portfolio.reduce((best,ticket)=>Math.max(best,ticket.numbers.filter(number=>target.numbers.includes(number)).length),0);
     distribution[bestMatches]++;
     rows.push({targetId:target.id,date:target.date,bestMatches,ticketCount:portfolio.length});
