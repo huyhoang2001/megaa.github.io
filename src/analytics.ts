@@ -16,10 +16,10 @@ export function weightedAverage(values:number[],weights:number[]):number{
  * shrinkage for higher-order subsets. 50 is chance-level; scores are ranking
  * signals, not probabilities that a number will be drawn next.
  */
-export function chanceAdjustedSubsetScore(observed:number,drawCount:number,subsetSize:1|2|3,maxNumber:number):number{
-  if(drawCount<=0||maxNumber<6||subsetSize>6)return 50;
+export function chanceAdjustedSubsetScore(observed:number,drawCount:number,subsetSize:1|2|3,maxNumber:number,drawSize=6):number{
+  if(drawCount<=0||maxNumber<drawSize||subsetSize>drawSize)return 50;
   let baseline=1;
-  for(let i=0;i<subsetSize;i++)baseline*=(6-i)/(maxNumber-i);
+  for(let i=0;i<subsetSize;i++)baseline*=(drawSize-i)/(maxNumber-i);
   const strength=20*subsetSize*subsetSize;
   const posterior=(Math.max(0,observed)+strength*baseline)/(drawCount+strength);
   const epsilon=1e-12;
@@ -51,12 +51,12 @@ export function filterCombinationsByScores<T extends Pick<CandidateCombination,(
   }));
 }
 export type CompactCombinationIssue={entryIndex:number;chunkIndex?:number;value:string};
-export function parseCompactCombinations(input:string,maxNumber:number){
+export function parseCompactCombinations(input:string,maxNumber:number,drawSize=6){
   const entries=input.split(/[,\n]+/).map(value=>value.trim()).filter(Boolean);
   const issues:CompactCombinationIssue[]=[];
   const combinations=entries.flatMap((entry,entryIndex)=>{
     const compact=entry.replace(/[\s-]+/g,"");
-    if(!/^\d{12}$/.test(compact)){issues.push({entryIndex,value:entry});return [];}
+    if(!new RegExp(`^\\d{${drawSize*2}}$`).test(compact)){issues.push({entryIndex,value:entry});return [];}
     const numbers=(compact.match(/\d{2}/g)??[]).map((value,chunkIndex)=>{const number=Number(value);if(number<1||number>maxNumber)issues.push({entryIndex,chunkIndex,value});return number;});
     numbers.forEach((number,chunkIndex)=>{if(numbers.indexOf(number)!==chunkIndex)issues.push({entryIndex,chunkIndex,value:pad(number)});});
     return issues.some(issue=>issue.entryIndex===entryIndex)?[]:[numbers.sort((a,b)=>a-b)];
@@ -154,10 +154,10 @@ export function calculateMonthlyDraws(draws: Draw[]) {
 
 export function calculateWeightedFrequency(draws:Draw[],number:number,halfLife=30){const lambda=Math.log(2)/Math.max(1,halfLife);return draws.reduce((sum,draw,index)=>sum+(draw.numbers.includes(number)?Math.exp(-lambda*(draws.length-1-index)):0),0);}
 export function calculateRollingFrequency(draws:Draw[],number:number){const count=(size:number)=>draws.slice(-size).filter(draw=>draw.numbers.includes(number)).length;return {last10:count(10),last20:count(20),last30:count(30),last50:count(50),last100:count(100),all:count(draws.length)};}
-export function calculateExpectedFrequencyBand(totalDraws:number,maxNumber=45){const p=6/maxNumber,expected=totalDraws*p,sigma=Math.sqrt(totalDraws*p*(1-p));return {expected,sigma,lower95:Math.max(0,expected-1.96*sigma),upper95:expected+1.96*sigma};}
-export function calculateFrequencyZ(observed:number,totalDraws:number,maxNumber=45){const {expected,sigma}=calculateExpectedFrequencyBand(totalDraws,maxNumber);return zScore(observed,expected,sigma);}
+export function calculateExpectedFrequencyBand(totalDraws:number,maxNumber=45,drawSize=6){const p=drawSize/maxNumber,expected=totalDraws*p,sigma=Math.sqrt(totalDraws*p*(1-p));return {expected,sigma,lower95:Math.max(0,expected-1.96*sigma),upper95:expected+1.96*sigma};}
+export function calculateFrequencyZ(observed:number,totalDraws:number,maxNumber=45,drawSize=6){const {expected,sigma}=calculateExpectedFrequencyBand(totalDraws,maxNumber,drawSize);return zScore(observed,expected,sigma);}
 const normalCdf=(value:number)=>{const sign=value<0?-1:1,x=Math.abs(value)/Math.sqrt(2),t=1/(1+.3275911*x),erf=sign*(1-(((((1.061405429*t-1.453152027)*t)+1.421413741)*t-0.284496736)*t+.254829592)*t*Math.exp(-x*x));return .5*(1+erf);};
-export function calculateChiSquareUniformity(draws:Draw[],maxNumber=45){const expected=draws.length*6/maxNumber;const counts=Array.from({length:maxNumber},(_,i)=>draws.filter(draw=>draw.numbers.includes(i+1)).length);const chiSquare=expected?counts.reduce((sum,count)=>sum+(count-expected)**2/expected,0):0;const df=maxNumber-1;const transformed=df?((chiSquare/df)**(1/3)-(1-2/(9*df)))/Math.sqrt(2/(9*df)):0;return {chiSquare:round2(chiSquare),degreesOfFreedom:df,pValue:clamp(1-normalCdf(transformed),0,1)};}
+export function calculateChiSquareUniformity(draws:Draw[],maxNumber=45){const expected=draws.length*(draws[0]?.numbers.length??6)/maxNumber;const counts=Array.from({length:maxNumber},(_,i)=>draws.filter(draw=>draw.numbers.includes(i+1)).length);const chiSquare=expected?counts.reduce((sum,count)=>sum+(count-expected)**2/expected,0):0;const df=maxNumber-1;const transformed=df?((chiSquare/df)**(1/3)-(1-2/(9*df)))/Math.sqrt(2/(9*df)):0;return {chiSquare:round2(chiSquare),degreesOfFreedom:df,pValue:clamp(1-normalCdf(transformed),0,1)};}
 export function calculateGapDistribution(draws:Draw[],number:number,minCompletedGaps=4){
   const appearances=draws.flatMap((draw,index)=>draw.numbers.includes(number)?[index]:[]);
   const gaps=appearances.slice(1).map((value,index)=>value-appearances[index]-1);
@@ -173,15 +173,16 @@ export function calculateGapDistribution(draws:Draw[],number:number,minCompleted
 }
 export function calculateTransitionMatrix(draws:Draw[],maxNumber=45){const counts=Array.from({length:maxNumber},()=>Array(maxNumber).fill(0));const eligible=Array(maxNumber).fill(0);for(let i=0;i<draws.length-1;i++)for(const a of draws[i].numbers){eligible[a-1]++;for(const b of draws[i+1].numbers)counts[a-1][b-1]++;}return {counts,eligible};}
 export function calculateTransitionLift(draws:Draw[],a:number,b:number,maxNumber=45){const {counts,eligible}=calculateTransitionMatrix(draws,maxNumber);const rate=eligible[a-1]?counts[a-1][b-1]/eligible[a-1]:0;const baseline=draws.length?draws.filter(draw=>draw.numbers.includes(b)).length/draws.length:0;return baseline?rate/baseline:0;}
-export function calculateDrawStructure(draw:Draw,maxNumber=45){const values=[...draw.numbers].sort((a,b)=>a-b),sum=values.reduce((a,b)=>a+b,0),evenCount=values.filter(n=>n%2===0).length,insideCount=values.filter(n=>INSIDE_SET.has(n)).length,lowCount=values.filter(n=>n<=Math.floor(maxNumber/2)).length;return {sum,mean:sum/6,median:median(values),min:values[0],max:values[5],spread:values[5]-values[0],evenCount,oddCount:6-evenCount,insideCount,outsideCount:6-insideCount,lowCount,highCount:6-lowCount,consecutivePairs:values.slice(1).filter((n,i)=>n-values[i]===1).length,digitalRoot:digitalRoot(sum),decadeDistribution:Array.from({length:Math.ceil(maxNumber/10)},(_,i)=>i*10).map(start=>values.filter(n=>n>start&&n<=Math.min(start+10,maxNumber)).length)};}
+export function calculateDrawStructure(draw:Draw,maxNumber=45,insideNumbers:readonly number[]= [...INSIDE_SET]){const size=draw.numbers.length,insideSet=new Set(insideNumbers),values=[...draw.numbers].sort((a,b)=>a-b),sum=values.reduce((a,b)=>a+b,0),evenCount=values.filter(n=>n%2===0).length,insideCount=values.filter(n=>insideSet.has(n)).length,lowCount=values.filter(n=>n<=Math.floor(maxNumber/2)).length;return {sum,mean:sum/size,median:median(values),min:values[0],max:values.at(-1)!,spread:values.at(-1)!-values[0],evenCount,oddCount:size-evenCount,insideCount,outsideCount:size-insideCount,lowCount,highCount:size-lowCount,consecutivePairs:values.slice(1).filter((n,i)=>n-values[i]===1).length,digitalRoot:digitalRoot(sum),decadeDistribution:Array.from({length:Math.ceil(maxNumber/10)},(_,i)=>i*10).map(start=>values.filter(n=>n>start&&n<=Math.min(start+10,maxNumber)).length)};}
 export function calculateStructureDistribution(draws:Draw[],maxNumber=45){const structures=draws.map(draw=>calculateDrawStructure(draw,maxNumber));return {structures,sum:{mean:mean(structures.map(x=>x.sum)),median:median(structures.map(x=>x.sum)),stdDev:stdDev(structures.map(x=>x.sum)),q1:quantile(structures.map(x=>x.sum),.25),q3:quantile(structures.map(x=>x.sum),.75)}};}
-export function calculateNoveltyScore(numbers:number[],history:Draw[]){const maxHistoricalOverlap=history.length?Math.max(...history.map(draw=>numbers.filter(number=>draw.numbers.includes(number)).length)):0;return {maxHistoricalOverlap,score:clamp(100-maxHistoricalOverlap/6*100)};}
+export function calculateNoveltyScore(numbers:number[],history:Draw[]){const size=numbers.length,maxHistoricalOverlap=history.length?Math.max(...history.map(draw=>numbers.filter(number=>draw.numbers.includes(number)).length)):0;return {maxHistoricalOverlap,score:clamp(100-maxHistoricalOverlap/size*100)};}
 export function detectStatisticalAnomalies(singles:SingleNumberStats[],settings:AnalysisSettings){return singles.flatMap(item=>{const result:{number:number;type:string;severity:string;value:number;explanation:string}[]=[];if(Math.abs(item.frequencyZ)>=(settings.frequencyZAlertThreshold??2))result.push({number:item.number,type:item.frequencyZ>0?"FREQUENCY_HIGH":"FREQUENCY_LOW",severity:Math.abs(item.frequencyZ)>=3?"STRONG":"WARNING",value:item.frequencyZ,explanation:`Historical frequency Z ${round2(item.frequencyZ)}`});const percentile=item.gap.gapPercentile,z=item.gap.gapZ;if(!item.gap.gapCensored&&((percentile!==null&&percentile>=(settings.gapPercentileAlertThreshold??95))||(z!==null&&z>=(settings.gapZAlertThreshold??2))))result.push({number:item.number,type:"GAP_HIGH",severity:percentile!==null&&percentile>=99?"STRONG":"WARNING",value:percentile??0,explanation:`Current gap is unusually long relative to this number's history (${percentile===null?"N/A":round2(percentile)}th percentile)`});if(Math.abs(item.recentZ30)>=(settings.recentZAlertThreshold??2))result.push({number:item.number,type:item.recentZ30>0?"RECENT_HIGH":"RECENT_LOW",severity:Math.abs(item.recentZ30)>=3?"STRONG":"WARNING",value:item.recentZ30,explanation:`Recent historical frequency Z ${round2(item.recentZ30)}`});return result;});}
 
-export function calculateSingles(draws: Draw[], settings: AnalysisSettings,maxNumber=45): SingleNumberStats[] {
+export function calculateSingles(draws: Draw[], settings: AnalysisSettings,maxNumber=45,insideNumbers:readonly number[]= [...INSIDE_SET]): SingleNumberStats[] {
   const ordered=[...draws].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
   const totalDraws=ordered.length;
-  const p=6/maxNumber;
+  const p=(ordered[0]?.numbers.length??6)/maxNumber;
+  const insideSet=new Set(insideNumbers);
   const expectedCount=totalDraws*p;
   const sigma=Math.sqrt(totalDraws*p*(1-p));
   const windowCount=(number:number,size:number)=>ordered.slice(-size).filter(draw=>draw.numbers.includes(number)).length;
@@ -207,7 +208,7 @@ export function calculateSingles(draws: Draw[], settings: AnalysisSettings,maxNu
     const ratio30vs100=ratio(rolling.last30,Math.min(30,totalDraws),rolling.last100,Math.min(100,totalDraws));
     const label:SingleNumberStats["momentum"]["label"]=ratio10vs30>1.4?"ACCELERATING":ratio10vs30>=1.1?"RISING":ratio10vs30>=.9?"STABLE":"FALLING";
     const recentN=Math.min(30,totalDraws), expected30=recentN*p, sigma30=Math.sqrt(recentN*p*(1-p));
-    return { number,totalCount,frequencyRate,currentGap,averageGap,maxGap,countLast10,countLast30,trend30,gapRatio,state,inside:INSIDE_SET.has(number),parity:number%2?"ODD" as const:"EVEN" as const,weightedFrequency,rolling,expectedCount,lower95:Math.max(0,expectedCount-1.96*sigma),upper95:expectedCount+1.96*sigma,frequencyZ:zScore(totalCount,expectedCount,sigma),recentZ30:zScore(countLast30,expected30,sigma30),gap,momentum:{ratio10vs30,ratio10vs50,ratio30vs100,label}};
+    return { number,totalCount,frequencyRate,currentGap,averageGap,maxGap,countLast10,countLast30,trend30,gapRatio,state,inside:insideSet.has(number),parity:number%2?"ODD" as const:"EVEN" as const,weightedFrequency,rolling,expectedCount,lower95:Math.max(0,expectedCount-1.96*sigma),upper95:expectedCount+1.96*sigma,frequencyZ:zScore(totalCount,expectedCount,sigma),recentZ30:zScore(countLast30,expectedCount===0?0:p*Math.min(30,totalDraws),sigma30),gap,momentum:{ratio10vs30,ratio10vs50,ratio30vs100,label}};
   });
   const weightedScores=normalizeMinMax(raw.map(item=>item.weightedFrequency));
   const rollingRanks=raw.map(item=>percentileRank(raw.map(x=>x.rolling.last30),item.rolling.last30)??50);
@@ -240,7 +241,8 @@ export function exactTopNumbers(items:{number:number;score:number}[],count:numbe
   return new Set([...items].sort((a,b)=>b.score-a.score||a.number-b.number).slice(0,count).map(item=>item.number));
 }
 
-export function calculatePairs(draws: Draw[],maxNumber=45): PairStats[] {
+export function calculatePairs(draws: Draw[],maxNumber=45,insideNumbers:readonly number[]= [...INSIDE_SET]): PairStats[] {
+  const insideSet=new Set(insideNumbers);
   const result: PairStats[] = [];
   const recent=draws.slice(-30);
   const counts=Array(maxNumber+1).fill(0),recentCounts=Array(maxNumber+1).fill(0);
@@ -254,13 +256,14 @@ export function calculatePairs(draws: Draw[],maxNumber=45): PairStats[] {
     const recentCount=recentPairCounts[a][b];
     const recentA=recentCounts[a],recentB=recentCounts[b];
     const recentExpected=recent.length?(recentA/recent.length)*(recentB/recent.length):0;
-    result.push({ a, b, key: `${pad(a)}-${pad(b)}`, count, rate: draws.length ? count / draws.length : 0, lift:expected?(count/draws.length)/expected:0,recentCount,recentLift:recentExpected?(recentCount/recent.length)/recentExpected:0,confidence:pairConfidence(count), insideCount: Number(INSIDE_SET.has(a)) + Number(INSIDE_SET.has(b)), outsideCount: Number(!INSIDE_SET.has(a)) + Number(!INSIDE_SET.has(b)), evenCount: Number(a % 2 === 0) + Number(b % 2 === 0), oddCount: Number(a % 2 !== 0) + Number(b % 2 !== 0), rank: 0 });
+    result.push({ a, b, key: `${pad(a)}-${pad(b)}`, count, rate: draws.length ? count / draws.length : 0, lift:expected?(count/draws.length)/expected:0,recentCount,recentLift:recentExpected?(recentCount/recent.length)/recentExpected:0,confidence:pairConfidence(count), insideCount: Number(insideSet.has(a)) + Number(insideSet.has(b)), outsideCount: Number(!insideSet.has(a)) + Number(!insideSet.has(b)), evenCount: Number(a % 2 === 0) + Number(b % 2 === 0), oddCount: Number(a % 2 !== 0) + Number(b % 2 !== 0), rank: 0 });
   }
   result.sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)).forEach((x, i) => x.rank = i + 1);
   return result;
 }
 
-export function calculateTriples(draws: Draw[],maxNumber=45): TripleStats[] {
+export function calculateTriples(draws: Draw[],maxNumber=45,insideNumbers:readonly number[]= [...INSIDE_SET]): TripleStats[] {
+  const insideSet=new Set(insideNumbers);
   const map = new Map<string, { numbers: [number, number, number]; count: number }>();
   draws.forEach(draw => combinations([...draw.numbers], 3).forEach(nums => {
     const sorted = nums.sort((a, b) => a - b) as [number, number, number];
@@ -269,14 +272,15 @@ export function calculateTriples(draws: Draw[],maxNumber=45): TripleStats[] {
     map.set(key, { numbers: sorted, count: (prev?.count ?? 0) + 1 });
   }));
   const counts=new Map(Array.from({length:maxNumber},(_,i)=>[i+1,draws.filter(draw=>draw.numbers.includes(i+1)).length]));
-  return [...map.entries()].map(([key, item]) => {const expected=item.numbers.reduce((product,n)=>product*((counts.get(n)??0)/Math.max(1,draws.length)),1);return { ...item, key, rate: draws.length ? item.count / draws.length : 0,lift:expected?(item.count/draws.length)/expected:0,confidence:pairConfidence(item.count), insideCount: item.numbers.filter(n => INSIDE_SET.has(n)).length, outsideCount: item.numbers.filter(n => !INSIDE_SET.has(n)).length, evenCount: item.numbers.filter(n => n % 2 === 0).length, oddCount: item.numbers.filter(n => n % 2 !== 0).length, rank: 0 };}).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)).map((x, i) => ({ ...x, rank: i + 1 }));
+  return [...map.entries()].map(([key, item]) => {const expected=item.numbers.reduce((product,n)=>product*((counts.get(n)??0)/Math.max(1,draws.length)),1);return { ...item, key, rate: draws.length ? item.count / draws.length : 0,lift:expected?(item.count/draws.length)/expected:0,confidence:pairConfidence(item.count), insideCount: item.numbers.filter(n => insideSet.has(n)).length, outsideCount: item.numbers.filter(n => !insideSet.has(n)).length, evenCount: item.numbers.filter(n => n % 2 === 0).length, oddCount: item.numbers.filter(n => n % 2 !== 0).length, rank: 0 };}).sort((a, b) => b.count - a.count || a.key.localeCompare(b.key)).map((x, i) => ({ ...x, rank: i + 1 }));
 }
 
-export function scoreCandidateCombinations(numberSets:number[][],singles:SingleNumberStats[],pairs:PairStats[],triples:TripleStats[],settings:AnalysisSettings,history:Draw[]=[]):CandidateCombination[]{
+export function scoreCandidateCombinations(numberSets:number[][],singles:SingleNumberStats[],pairs:PairStats[],triples:TripleStats[],settings:AnalysisSettings,history:Draw[]=[],insideNumbers:readonly number[]= [...INSIDE_SET]):CandidateCombination[]{
   const maxNumber=singles.length||45;
-  const observedDraws=history.length||singles.reduce((sum,item)=>sum+item.totalCount,0)/6;
+  const drawSize=history[0]?.numbers.length??numberSets[0]?.length??6,insideSet=new Set(insideNumbers);
+  const observedDraws=history.length||singles.reduce((sum,item)=>sum+item.totalCount,0)/drawSize;
   const singleMap = new Map(singles.map(x => [x.number,{
-    chance:chanceAdjustedSubsetScore(x.totalCount,observedDraws,1,maxNumber),
+    chance:chanceAdjustedSubsetScore(x.totalCount,observedDraws,1,maxNumber,drawSize),
     consensus:x.models.consensus.normalizedScore,
   }]));
   const pairMap = new Map(pairs.map(x => [x.key, x]));
@@ -287,46 +291,46 @@ export function scoreCandidateCombinations(numberSets:number[][],singles:SingleN
     const total = numbers.reduce((a, b) => a + b, 0);
     const root = digitalRoot(total);
     const evenCount = numbers.filter(n => n % 2 === 0).length;
-    const insideCount = numbers.filter(n => INSIDE_SET.has(n)).length;
+    const insideCount = numbers.filter(n => insideSet.has(n)).length;
     const pairScore = combinations(numbers, 2).reduce((sum, pair) => {
       const stat=pairMap.get([...pair].sort((a,b)=>a-b).map(pad).join("-"));
-      return sum+chanceAdjustedSubsetScore(stat?.count??0,observedDraws,2,maxNumber);
-    }, 0) / 15;
+      return sum+chanceAdjustedSubsetScore(stat?.count??0,observedDraws,2,maxNumber,drawSize);
+    }, 0) / combinations(numbers,2).length;
     const tripleScore = combinations(numbers, 3).reduce((sum, triple) => {
       const stat=tripleMap.get([...triple].sort((a,b)=>a-b).map(pad).join("-"));
-      return sum+chanceAdjustedSubsetScore(stat?.count??0,observedDraws,3,maxNumber);
-    }, 0) / 20;
+      return sum+chanceAdjustedSubsetScore(stat?.count??0,observedDraws,3,maxNumber,drawSize);
+    }, 0) / combinations(numbers,3).length;
     // Blend calibrated frequency evidence with consensus so scoring presets
     // can continue to emphasize gap, momentum, and association signals.
     const singleScore = numbers.reduce((sum, n) => {
       const item=singleMap.get(n);
       return sum+(item?(item.chance+item.consensus)/2:50);
-    }, 0) / 6;
+    }, 0) / drawSize;
     // Uniform draws provide no evidence for preferring any particular digital root.
     const structureRaw = 0;
-    const parity = evenCount === 3 ? 30 : evenCount === 2 || evenCount === 4 ? 25 : 0;
-    const distribution = insideCount === 4 ? 30 : insideCount === 3 ? 25 : 0;
+    const parityCenter=Math.ceil(drawSize/2),parity=Math.abs(evenCount-parityCenter)===0?30:Math.abs(evenCount-parityCenter)===1?25:0;
+    const insideCenter=Math.round(drawSize*insideNumbers.length/maxNumber),distribution=drawSize===6?(insideCount===4?30:insideCount===3?25:0):Math.abs(insideCount-insideCenter)===0?30:Math.abs(insideCount-insideCenter)===1?25:0;
     const structureScore = structureRaw + parity + distribution + (total >= settings.minTotal ? 10 : 0);
-    const valid = total >= settings.minTotal && settings.allowedDigitalRoots.includes(root) && settings.allowedParity.includes(`${evenCount}/${6-evenCount}`) && settings.allowedInsideOutside.includes(`${insideCount}/${6-insideCount}`);
+    const valid = total >= settings.minTotal && settings.allowedDigitalRoots.includes(root) && settings.allowedParity.includes(`${evenCount}/${drawSize-evenCount}`) && settings.allowedInsideOutside.includes(`${insideCount}/${drawSize-insideCount}`);
     const maxHistoricalOverlap=historySets.length?Math.max(...historySets.map(draw=>numbers.reduce((count,number)=>count+Number(draw.has(number)),0))):0;
-    const noveltyScore=history.length?clamp(100-maxHistoricalOverlap/6*100):100;
+    const noveltyScore=history.length?clamp(100-maxHistoricalOverlap/drawSize*100):100;
     const totalScore = weightedAverage([singleScore,pairScore,tripleScore,structureScore,noveltyScore],[w.consensus,w.pair,w.triple,w.structure,w.novelty]);
     const confidence:Confidence=numbers.filter(n=>(singles[n-1]?.confidence??"LOW")!=="LOW").length>=4?"MEDIUM":"LOW";
-    return { numbers, total, digitalRoot: root, evenCount, oddCount: 6-evenCount, insideCount, outsideCount: 6-insideCount, singleScore, pairScore, tripleScore, structureScore, noveltyScore,maxHistoricalOverlap,totalScore,confidence,valid };
+    return { numbers, total, digitalRoot: root, evenCount, oddCount: drawSize-evenCount, insideCount, outsideCount: drawSize-insideCount, singleScore, pairScore, tripleScore, structureScore, noveltyScore,maxHistoricalOverlap,totalScore,confidence,valid };
   });
 }
 
-export function calculateScoreTimeline(draws:Draw[],settings:AnalysisSettings,maxNumber=45,targetDrawIds?:string[],trainingWindow=50){
+export function calculateScoreTimeline(draws:Draw[],settings:AnalysisSettings,maxNumber=45,targetDrawIds?:string[],trainingWindow=50,insideNumbers:readonly number[]= [...INSIDE_SET]){
   const ordered=[...draws].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
   if(!ordered.length)return [];
   const targets=targetDrawIds?new Set(targetDrawIds):undefined;
   const points=ordered.flatMap((draw,index)=>{
     if(index<trainingWindow||(targets&&!targets.has(draw.id)))return [];
     const history=ordered.slice(index-trainingWindow,index);
-    const singles=calculateSingles(history,settings,maxNumber);
-    const pairs=calculatePairs(history,maxNumber);
-    const triples=calculateTriples(history,maxNumber);
-    const [score]=scoreCandidateCombinations([draw.numbers],singles,pairs,triples,settings,history);
+    const singles=calculateSingles(history,settings,maxNumber,insideNumbers);
+    const pairs=calculatePairs(history,maxNumber,insideNumbers);
+    const triples=calculateTriples(history,maxNumber,insideNumbers);
+    const [score]=scoreCandidateCombinations([draw.numbers],singles,pairs,triples,settings,history,insideNumbers);
     return {id:draw.id,date:draw.date,single:round2(score.singleScore),pair:round2(score.pairScore),triple:round2(score.tripleScore),structure:round2(score.structureScore),total:round2(score.totalScore)};
   });
   const movingAverage=(key:"single"|"pair"|"triple"|"structure"|"total",index:number)=>{
@@ -343,7 +347,7 @@ export function calculateScoreTimeline(draws:Draw[],settings:AnalysisSettings,ma
   }));
 }
 
-export function generateCandidateUniverse(singles: SingleNumberStats[], pairs: PairStats[], triples: TripleStats[], settings: AnalysisSettings, history:Draw[]=[]): CandidateCombination[] {
+export function generateCandidateUniverse(singles: SingleNumberStats[], pairs: PairStats[], triples: TripleStats[], settings: AnalysisSettings, history:Draw[]=[],insideNumbers:readonly number[]= [...INSIDE_SET]): CandidateCombination[] {
   const ranked = [...singles].sort((a, b) => b.technicalScore - a.technicalScore || a.number - b.number);
   // The inside preference can otherwise fill the entire pool with inside numbers,
   // making the required 4/2 or 3/3 structure mathematically impossible.
@@ -353,7 +357,8 @@ export function generateCandidateUniverse(singles: SingleNumberStats[], pairs: P
     ...ranked.filter(x => x.inside).slice(0, insideTarget),
     ...ranked.filter(x => !x.inside).slice(0, settings.candidatePoolSize - insideTarget),
   ].map(x => x.number).sort((a, b) => a - b);
-  const candidates=scoreCandidateCombinations(combinations(pool,6),singles,pairs,triples,settings,history).filter(x=>x.valid).sort((a,b)=>b.totalScore-a.totalScore);
+  const drawSize=history[0]?.numbers.length??6,insideSet=new Set(insideNumbers);
+  const candidates=scoreCandidateCombinations(combinations(pool,drawSize),singles,pairs,triples,settings,history,insideNumbers).filter(x=>x.valid).sort((a,b)=>b.totalScore-a.totalScore);
   const rootsPresent=new Set(candidates.map(candidate=>candidate.digitalRoot));
   const missingRoots=settings.allowedDigitalRoots.filter(root=>!rootsPresent.has(root));
   const parityPresent=new Set(candidates.map(candidate=>`${candidate.evenCount}/${candidate.oddCount}`));
@@ -376,12 +381,12 @@ export function generateCandidateUniverse(singles: SingleNumberStats[], pairs: P
         const rootKey=`root:${root}`;
         if(!settings.allowedDigitalRoots.includes(root))continue;
         const even=numbers.filter(value=>value%2===0).length;
-        const parity=`${even}/${6-even}`;
+        const parity=`${even}/${drawSize-even}`;
         const parityKey=`parity:${parity}`;
         const targetKeys=[rootKey,parityKey].filter(key=>targetCounts.has(key)&&(targetCounts.get(key)??0)<12);
         if(!targetKeys.length)continue;
-        const inside=numbers.filter(value=>INSIDE_SET.has(value)).length;
-        if(total<settings.minTotal||!settings.allowedParity.includes(parity)||!settings.allowedInsideOutside.includes(`${inside}/${6-inside}`))continue;
+        const inside=numbers.filter(value=>insideSet.has(value)).length;
+        if(total<settings.minTotal||!settings.allowedParity.includes(parity)||!settings.allowedInsideOutside.includes(`${inside}/${drawSize-inside}`))continue;
         const key=[...numbers].sort((a,b)=>a-b).join("-");
         if(candidateKeys.has(key))continue;
         candidateKeys.add(key);
@@ -391,7 +396,7 @@ export function generateCandidateUniverse(singles: SingleNumberStats[], pairs: P
       if([...targetCounts.values()].every(count=>count>=12))break;
     }
   }
-  const alternatives=rootAlternatives.length?scoreCandidateCombinations(rootAlternatives,singles,pairs,triples,settings,history).filter(candidate=>candidate.valid):[];
+  const alternatives=rootAlternatives.length?scoreCandidateCombinations(rootAlternatives,singles,pairs,triples,settings,history,insideNumbers).filter(candidate=>candidate.valid):[];
   return [...candidates,...alternatives].sort((a,b)=>b.totalScore-a.totalScore||a.numbers.join("-").localeCompare(b.numbers.join("-"))).map((item,index)=>({...item,candidateRank:index+1}));
 }
 
@@ -461,8 +466,8 @@ export function selectExperimentalPowerPortfolio(allCandidates:CandidateCombinat
   return selected.map((item,index)=>({...item,rank:index+1}));
 }
 
-export function generateCandidates(singles: SingleNumberStats[], pairs: PairStats[], triples: TripleStats[], settings: AnalysisSettings, history:Draw[]=[]): CandidateCombination[] {
-  return selectPortfolio(generateCandidateUniverse(singles,pairs,triples,settings,history),settings);
+export function generateCandidates(singles: SingleNumberStats[], pairs: PairStats[], triples: TripleStats[], settings: AnalysisSettings, history:Draw[]=[],insideNumbers:readonly number[]= [...INSIDE_SET]): CandidateCombination[] {
+  return selectPortfolio(generateCandidateUniverse(singles,pairs,triples,settings,history,insideNumbers),settings);
 }
 
 export type FilteredCombination={proposal:CandidateCombination;filter:CandidateCombination;mainRank:number|null;filteredRank:number};
@@ -489,19 +494,19 @@ export function calculatePortfolioCoverage(portfolio:CandidateCombination[],maxN
   return {ticketCount:portfolio.length,uniqueNumbers:numberCounts.filter(item=>item.count>0).length,uniquePairs:unique(2),uniqueTriples:unique(3),mostRepeatedTriple:mostRepeatedTriple?{numbers:mostRepeatedTriple[0],ticketCount:mostRepeatedTriple[1]}:null,numberCounts};
 }
 
-export function backtest(draws: Draw[], settings: AnalysisSettings, count = 12,maxNumber=45) {
+export function backtest(draws: Draw[], settings: AnalysisSettings, count = 12,maxNumber=45,insideNumbers:readonly number[]= [...INSIDE_SET]) {
   const distribution = [0,0,0,0,0,0,0];
   let totalMatches = 0; let best = 0; let tests = 0;
   for (let i = Math.max(10, draws.length - count); i < draws.length; i++) {
     const history = draws.slice(0, i);
-    const predictions = generateCandidates(calculateSingles(history,settings,maxNumber),calculatePairs(history,maxNumber),calculateTriples(history,maxNumber),settings,history).slice(0,5);
+    const predictions = generateCandidates(calculateSingles(history,settings,maxNumber,insideNumbers),calculatePairs(history,maxNumber,insideNumbers),calculateTriples(history,maxNumber,insideNumbers),settings,history,insideNumbers).slice(0,5);
     const match = predictions.reduce((m, p) => Math.max(m, p.numbers.filter(n => draws[i].numbers.includes(n)).length), 0);
     distribution[match]++; totalMatches += match; best = Math.max(best, match); tests++;
   }
   return { distribution, average: tests ? totalMatches / tests : 0, best, tests };
 }
 
-export type BacktestRangeOptions={fromDate:string;toDate:string;trainingDraws:number;predictionCount:number;maxNumber?:number;manualProposedSets?:number[][];powerSuggestionMode?:PowerSuggestionMode};
+export type BacktestRangeOptions={fromDate:string;toDate:string;trainingDraws:number;predictionCount:number;maxNumber?:number;insideNumbers?:readonly number[];manualProposedSets?:number[][];powerSuggestionMode?:PowerSuggestionMode};
 export type BacktestPrediction=CandidateCombination&{count:number;rate:number;matches:number};
 export type BacktestResultRow={targetId:string;date:string;predictions:BacktestPrediction[];actual:number[];bestMatches:number};
 
@@ -523,11 +528,12 @@ export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:Bac
   const trainingDraws=Math.max(10,options.trainingDraws);
   const predictionCount=Math.max(1,options.predictionCount);
   const maxNumber=options.maxNumber??45;
+  const insideNumbers=options.insideNumbers??[...INSIDE_SET];
   const evaluate=(history:Draw[],actual:number[],targetId:string,date:string,manualProposedSets?:number[][])=>{
-    const singles=calculateSingles(history,settings,maxNumber);
-    const pairs=calculatePairs(history,maxNumber);
-    const triples=calculateTriples(history,maxNumber);
-    const candidates=manualProposedSets?.length?scoreCandidateCombinations(manualProposedSets,singles,pairs,triples,settings,history):options.powerSuggestionMode==="experimental"&&maxNumber===55?selectExperimentalPowerPortfolio(generateCandidateUniverse(singles,pairs,triples,settings,history),singles,pairs,triples,settings,history).slice(0,predictionCount):generateCandidates(singles,pairs,triples,settings,history).slice(0,predictionCount);
+    const singles=calculateSingles(history,settings,maxNumber,insideNumbers);
+    const pairs=calculatePairs(history,maxNumber,insideNumbers);
+    const triples=calculateTriples(history,maxNumber,insideNumbers);
+    const candidates=manualProposedSets?.length?scoreCandidateCombinations(manualProposedSets,singles,pairs,triples,settings,history,insideNumbers):options.powerSuggestionMode==="experimental"&&maxNumber===55?selectExperimentalPowerPortfolio(generateCandidateUniverse(singles,pairs,triples,settings,history),singles,pairs,triples,settings,history).slice(0,predictionCount):generateCandidates(singles,pairs,triples,settings,history,insideNumbers).slice(0,predictionCount);
     const predictions:BacktestPrediction[]=candidates.map(candidate=>{
       const key=candidate.numbers.map(pad).join("-");
       const count=history.filter(draw=>draw.numbers.map(pad).join("-")===key).length;
@@ -551,7 +557,7 @@ export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:Bac
   return {distribution,average:rows.length?totalMatches/rows.length:0,best,tests:rows.length,rows,skippedTrainingCount:targets.length-rows.length,trainingWindow:trainingDraws};
 }
 
-export function runPortfolioRollingBacktest(draws:Draw[],settings:AnalysisSettings,options:{fromDate:string;toDate:string;predictionCount:5|10|20;maxNumber:number;trainingDraws?:number;powerSuggestionMode?:PowerSuggestionMode}){
+export function runPortfolioRollingBacktest(draws:Draw[],settings:AnalysisSettings,options:{fromDate:string;toDate:string;predictionCount:5|10|20;maxNumber:number;insideNumbers?:readonly number[];trainingDraws?:number;powerSuggestionMode?:PowerSuggestionMode}){
   const ordered=[...draws].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
   const window=options.trainingDraws??50;
   const distribution=[0,0,0,0,0,0,0];
@@ -562,10 +568,11 @@ export function runPortfolioRollingBacktest(draws:Draw[],settings:AnalysisSettin
     if(target.date<options.fromDate||target.date>options.toDate)continue;
     if(index<window){skippedTrainingCount++;continue;}
     const training=ordered.slice(index-window,index);
-    const singles=calculateSingles(training,settings,options.maxNumber);
-    const pairs=calculatePairs(training,options.maxNumber);
-    const triples=calculateTriples(training,options.maxNumber);
-    const universe=generateCandidateUniverse(singles,pairs,triples,settings,training);
+    const insideNumbers=options.insideNumbers??[...INSIDE_SET];
+    const singles=calculateSingles(training,settings,options.maxNumber,insideNumbers);
+    const pairs=calculatePairs(training,options.maxNumber,insideNumbers);
+    const triples=calculateTriples(training,options.maxNumber,insideNumbers);
+    const universe=generateCandidateUniverse(singles,pairs,triples,settings,training,insideNumbers);
     const portfolio=(options.powerSuggestionMode==="experimental"&&options.maxNumber===55?selectExperimentalPowerPortfolio(universe,singles,pairs,triples,settings,training):selectPortfolio(universe,settings,50)).slice(0,options.predictionCount);
     const bestMatches=portfolio.reduce((best,ticket)=>Math.max(best,ticket.numbers.filter(number=>target.numbers.includes(number)).length),0);
     distribution[bestMatches]++;
@@ -580,7 +587,8 @@ export function runPortfolioRollingBacktest(draws:Draw[],settings:AnalysisSettin
   return {rows,distribution,evaluatedTargetCount:rows.length,skippedTrainingCount,requestedTicketCount:options.predictionCount,minimumTicketCount:rows.length?Math.min(...rows.map(row=>row.ticketCount)):0,meanTicketCount:rows.length?mean(rows.map(row=>row.ticketCount)):0,trainingWindow:window,fromDate:options.fromDate,toDate:options.toDate,hitRates:{atLeast3:rate(3),atLeast4:rate(4),atLeast5:rate(5),six:rate(6)},confidence95:{atLeast3:wilson(3),atLeast4:wilson(4),atLeast5:wilson(5),six:wilson(6)}};
 }
 
-export function runRollingBacktest(draws:Draw[],settings:AnalysisSettings,targetCount=30,seed=645,maxNumber=45){
+export function runRollingBacktest(draws:Draw[],settings:AnalysisSettings,targetCount=30,seed=645,maxNumber=45,insideNumbers:readonly number[]= [...INSIDE_SET]){
+  const drawSize=draws[0]?.numbers.length??6;
   const minimum=Math.max(1,Math.min(settings.backtestMinTrainingDraws??50,draws.length-1));
   const start=Math.max(minimum,draws.length-targetCount);
   let randomState=seed>>>0;
@@ -588,12 +596,12 @@ export function runRollingBacktest(draws:Draw[],settings:AnalysisSettings,target
   const rows=[];
   for(let index=start;index<draws.length;index++){
     const training=draws.slice(0,index),actual=draws[index].numbers;
-    const ranked=[...calculateSingles(training,settings,maxNumber)].sort((a,b)=>b.technicalScore-a.technicalScore||a.number-b.number);
+    const ranked=[...calculateSingles(training,settings,maxNumber,insideNumbers)].sort((a,b)=>b.technicalScore-a.technicalScore||a.number-b.number);
     const shuffled=Array.from({length:maxNumber},(_,i)=>i+1);
     for(let j=shuffled.length-1;j>0;j--){const k=Math.floor(random()*(j+1));[shuffled[j],shuffled[k]]=[shuffled[k],shuffled[j]];}
     const positions=new Map(ranked.map((item,position)=>[item.number,position+1]));
     const actualRanks=actual.map(number=>positions.get(number)??maxNumber);
     rows.push({targetId:draws[index].id,top5:actualRanks.filter(rank=>rank<=5).length,top10:actualRanks.filter(rank=>rank<=10).length,top15:actualRanks.filter(rank=>rank<=15).length,meanActualRank:mean(actualRanks),randomTop10:actual.filter(number=>shuffled.slice(0,10).includes(number)).length});
   }
-  return {rows,tests:rows.length,modelTop10HitRate:rows.length?mean(rows.map(row=>row.top10/6)):0,randomTop10HitRate:rows.length?mean(rows.map(row=>row.randomTop10/6)):0,meanActualRank:rows.length?mean(rows.map(row=>row.meanActualRank)):0,seed,metricsVersion:2,tieBreak:"score desc, number asc"};
+  return {rows,tests:rows.length,modelTop10HitRate:rows.length?mean(rows.map(row=>row.top10/drawSize)):0,randomTop10HitRate:rows.length?mean(rows.map(row=>row.randomTop10/drawSize)):0,meanActualRank:rows.length?mean(rows.map(row=>row.meanActualRank)):0,seed,metricsVersion:2,tieBreak:"score desc, number asc"};
 }

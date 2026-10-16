@@ -17,19 +17,19 @@ export function settingsForPreset(settings: AnalysisSettings, preset: string):An
 }
 
 export function useAnalytics(topCombinationCount?:number, skipPredictions=false) {
-  const { draws:megaDraws, powerDraws, selectedGame, settings, dashboardFilters, powerSuggestionMode } = useLotteryStore();
+  const { draws:megaDraws, powerDraws, lottoDraws, selectedGame, settings, dashboardFilters, powerSuggestionMode } = useLotteryStore();
   const {period,fromDate,toDate,scoringPreset}=dashboardFilters;
   const stats=useMemo(() => {
     const gameConfig=LOTTERY_GAMES[selectedGame];
-    const draws=selectedGame==="power655"?powerDraws:megaDraws;
+    const draws=selectedGame==="mega645"?megaDraws:selectedGame==="power655"?powerDraws:lottoDraws;
     const effectiveSettings = settingsForPreset(settings, scoringPreset);
     const filtered = filterDraws(draws, period, fromDate, toDate);
-    const singles = calculateSingles(filtered, effectiveSettings,gameConfig.maxNumber);
-    const pairs = calculatePairs(filtered,gameConfig.maxNumber);
-    const triples = calculateTriples(filtered,gameConfig.maxNumber);
+    const singles = calculateSingles(filtered, effectiveSettings,gameConfig.maxNumber,gameConfig.insideNumbers);
+    const pairs = calculatePairs(filtered,gameConfig.maxNumber,gameConfig.insideNumbers);
+    const triples = calculateTriples(filtered,gameConfig.maxNumber,gameConfig.insideNumbers);
     return { draws,filtered,singles,pairs,triples,selectedGame,gameConfig,effectiveSettings };
-  }, [megaDraws,powerDraws,selectedGame,settings,period,fromDate,toDate,scoringPreset]);
-  const candidateUniverse=useMemo(()=>skipPredictions?[]:generateCandidateUniverse(stats.singles,stats.pairs,stats.triples,stats.effectiveSettings,stats.filtered),[stats,skipPredictions]);
+  }, [megaDraws,powerDraws,lottoDraws,selectedGame,settings,period,fromDate,toDate,scoringPreset]);
+  const candidateUniverse=useMemo(()=>skipPredictions?[]:generateCandidateUniverse(stats.singles,stats.pairs,stats.triples,stats.effectiveSettings,stats.filtered,stats.gameConfig.insideNumbers),[stats,skipPredictions]);
   const predictions=useMemo(()=>skipPredictions?[]:selectedGame==="power655"&&powerSuggestionMode==="experimental"?selectExperimentalPowerPortfolio(candidateUniverse,stats.singles,stats.pairs,stats.triples,stats.effectiveSettings,stats.filtered,Math.max(50,topCombinationCount??0)):selectPortfolio(candidateUniverse,stats.effectiveSettings,Math.max(50,topCombinationCount??0)),[candidateUniverse,stats,selectedGame,powerSuggestionMode,topCombinationCount,skipPredictions]);
   return {...stats,candidateUniverse,predictions};
 }

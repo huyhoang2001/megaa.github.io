@@ -1,5 +1,6 @@
 import { describe,expect,it } from "vitest";
 import powerHistory from "./data/power655-history.json";
+import lottoHistory from "./data/lotto535-history.json";
 import type { Draw } from "./domain";
 import { mergeBundledDraws, mergeBundledPowerDraws, mergeSettings, normalizeDashboardFilters, useLotteryStore, validDraws, validSettings } from "./store";
 
@@ -50,6 +51,12 @@ describe("Power history persistence migration",()=>{
     expect(validSettings({...mergeSettings(),consensusWeights:{frequency:0,momentum:0,gap:0,association:0}})).toBe(false);
     expect(validSettings({...mergeSettings(),minTotal:256},45)).toBe(false);
     expect(validSettings({...mergeSettings(),minTotal:315},55)).toBe(true);
+  });
+  it("accepts five main numbers and the 1–12 special number for Lotto 5/35",()=>{
+    const draws=lottoHistory.draws as Draw[];
+    expect(validDraws(draws,"lotto535")).toBe(true);
+    expect(validDraws([{...draws.at(-1)!,numbers:[1,2,3,4,5,6]}],"lotto535")).toBe(false);
+    expect(validSettings({...mergeSettings(),minTotal:35},35,5)).toBe(true);
   });
   it("keeps settings and filter presets separate when switching games",()=>{
     const original=useLotteryStore.getState();

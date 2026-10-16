@@ -24,7 +24,7 @@ const backtestCache=new Map<string,BacktestPayload>();
 
 const drawSchema = z.object({
   date: z.string().min(10),
-  numbers: z.string().refine(value => { const nums=value.split(/[ ,;-]+/).map(Number); return nums.length === 6 && new Set(nums).size === 6 && nums.every(n => n >= 1); }, "Enter 6 unique positive numbers"),
+  numbers: z.string().refine(value => { const nums=value.split(/[ ,;-]+/).map(Number); return nums.length > 0 && new Set(nums).size === nums.length && nums.every(n => Number.isInteger(n)&&n >= 1); }, "Enter unique positive numbers"),
   bonus: z.number().optional(),
   jackpot: z.number().min(0),
   jackpot2: z.number().min(0).optional(),
@@ -59,9 +59,9 @@ function useTableLabels(){
 
 export function HistoryPage() {
   const {t}=useI18n();
-  const { draws:megaDraws,powerDraws,selectedGame,addDraw,updateDraw,removeDraw,importData,resetData,settings } = useLotteryStore();
+  const { draws:megaDraws,powerDraws,lottoDraws,selectedGame,addDraw,updateDraw,removeDraw,importData,resetData,settings } = useLotteryStore();
   const gameConfig=LOTTERY_GAMES[selectedGame];
-  const draws=selectedGame==="power655"?powerDraws:megaDraws;
+  const draws=selectedGame==="mega645"?megaDraws:selectedGame==="power655"?powerDraws:lottoDraws;
   const [open, setOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -70,19 +70,20 @@ export function HistoryPage() {
     const parsed = drawSchema.parse(values);
     if (draws.some(d=>d.date===parsed.date&&d.id!==editingId)) return;
     const numbers=parsed.numbers.split(/[ ,;-]+/).map(Number).sort((a,b)=>a-b) as Draw["numbers"];
+    if(numbers.length!==gameConfig.drawSize){setError("numbers",{message:`Enter ${gameConfig.drawSize} unique numbers`});return;}
     if(numbers.some(number=>number>gameConfig.maxNumber)){setError("numbers",{message:`Numbers must be from 1 to ${gameConfig.maxNumber}`});return;}
-    if(selectedGame==="power655"&&(!parsed.bonus||parsed.bonus>55)){setError("bonus",{message:"Enter a bonus number from 1 to 55"});return;}
-    const draw:Draw={id:editingId??crypto.randomUUID(),date:parsed.date,numbers,jackpot:parsed.jackpot,...(selectedGame==="power655"?{bonus:parsed.bonus,jackpot2:parsed.jackpot2??0}:{})};
+    if(gameConfig.specialMax&&(!parsed.bonus||parsed.bonus>gameConfig.specialMax)){setError("bonus",{message:`Enter a special number from 1 to ${gameConfig.specialMax}`});return;}
+    const draw:Draw={id:editingId??crypto.randomUUID(),date:parsed.date,numbers,jackpot:parsed.jackpot,...(gameConfig.specialMax?{bonus:parsed.bonus}:{}),...(selectedGame==="power655"?{jackpot2:parsed.jackpot2??0}:{})};
     if(editingId) updateDraw(editingId,draw); else addDraw(draw);
     reset(); setEditingId(null); setOpen(false);
   };
   const startAdd=()=>{ setEditingId(null); reset({date:new Date().toISOString().slice(0,10),numbers:"",bonus:undefined,jackpot:0,jackpot2:undefined}); setOpen(true); };
   const startEdit=(draw:Draw)=>{ setEditingId(draw.id); reset({date:draw.date,numbers:draw.numbers.map(pad).join(" "),bonus:draw.bonus,jackpot:draw.jackpot,jackpot2:draw.jackpot2}); setOpen(true); };
   const exportData = () => { const blob=new Blob([JSON.stringify({version:1,game:selectedGame,draws,settings},null,2)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=`${selectedGame}-backup-${new Date().toISOString().slice(0,10)}.json`; a.click(); URL.revokeObjectURL(a.href); };
-  const onImport = async (file?: File) => { if(!file)return; try { const data=JSON.parse(await file.text()); const valid=z.object({version:z.number(),draws:z.array(z.object({id:z.string(),date:z.string(),numbers:z.tuple([z.number(),z.number(),z.number(),z.number(),z.number(),z.number()]),bonus:z.number().optional(),jackpot:z.number().min(0),jackpot2:z.number().optional()}))}).parse(data); importData({draws:valid.draws,settings:data.settings}); } catch { alert("Invalid data file"); } };
+  const onImport = async (file?: File) => { if(!file)return; try { const data=JSON.parse(await file.text()); const valid=z.object({version:z.number(),draws:z.array(z.object({id:z.string(),date:z.string(),numbers:z.array(z.number()),bonus:z.number().optional(),jackpot:z.number().min(0),jackpot2:z.number().optional()}))}).parse(data); importData({draws:valid.draws,settings:data.settings}); } catch { alert("Invalid data file"); } };
   return <><PageTitle title="Draw history" subtitle={`${gameConfig.name}: ${draws.length} draws, ordered oldest to newest`} actions={<><Button onClick={startAdd}><Plus size={15}/>Add draw</Button><Button className="secondary" onClick={()=>inputRef.current?.click()}><Upload size={15}/>Import JSON</Button><input ref={inputRef} hidden type="file" accept="application/json" onChange={e=>onImport(e.target.files?.[0])}/><Button className="secondary" onClick={exportData}><Download size={15}/>Export</Button><Button className="secondary" onClick={resetData}><RotateCcw size={15}/>Reset</Button></>} />
-  {open&&<Card className="form-card"><CardHeader title={editingId?"Update draw":"Add a draw"} subtitle={`Numbers are validated from 1 to ${gameConfig.maxNumber}`}/><form onSubmit={handleSubmit(submit)} className="draw-form"><label>Date<input type="date" {...register("date")}/></label><label>Six numbers<input placeholder="05 14 22 28 32 39" {...register("numbers")}/><small>{errors.numbers?.message}</small></label>{selectedGame==="power655"&&<label>Bonus<input type="number" min="1" max="55" {...register("bonus",{setValueAs:value=>value===""?undefined:Number(value)})}/><small>{errors.bonus?.message}</small></label>}<label>{selectedGame==="power655"?t("common.jackpot1"):"Jackpot"} (VND)<input type="number" {...register("jackpot",{valueAsNumber:true})}/></label>{selectedGame==="power655"&&<label>{t("common.jackpot2")} (VND)<input type="number" {...register("jackpot2",{setValueAs:value=>value===""?undefined:Number(value)})}/></label>}<Button type="submit">{editingId?"Save changes":"Save draw"}</Button></form></Card>}
-  <Card className="table-card"><div className="table-scroll"><table><thead><tr><th>Date</th>{[1,2,3,4,5,6].map(n=><th key={n}>N{n}</th>)}{selectedGame==="power655"&&<th>{t("common.bonus")}</th>}<th>{selectedGame==="power655"?t("common.jackpot1"):"Jackpot"}</th>{selectedGame==="power655"&&<th>{t("common.jackpot2")}</th>}<th>Actions</th></tr></thead><tbody>{[...draws].reverse().map(draw=><tr key={draw.id}><td>{format(parseISO(draw.date),"dd/MM/yyyy")}</td>{draw.numbers.map((n,i)=><td key={n}><NumberBall number={n} index={i} small/></td>)}{selectedGame==="power655"&&<td>{draw.bonus?<NumberBall number={draw.bonus} index={5} small/>:"-"}</td>}<td>{draw.jackpot?`${draw.jackpot.toLocaleString("en-US")} VND`:t("common.unavailable")}</td>{selectedGame==="power655"&&<td>{draw.jackpot2?`${draw.jackpot2.toLocaleString("en-US")} VND`:t("common.unavailable")}</td>}<td><div className="row-actions"><Button className="icon secondary" aria-label={`Edit draw ${draw.date}`} onClick={()=>startEdit(draw)}><Pencil size={14}/></Button><Button className="icon danger" aria-label={`Delete draw ${draw.date}`} onClick={()=>removeDraw(draw.id)}><Trash2 size={15}/></Button></div></td></tr>)}</tbody></table></div></Card></>;
+  {open&&<Card className="form-card"><CardHeader title={editingId?"Update draw":"Add a draw"} subtitle={`Numbers are validated from 1 to ${gameConfig.maxNumber}`}/><form onSubmit={handleSubmit(submit)} className="draw-form"><label>Date<input type="date" {...register("date")}/></label><label>{gameConfig.drawSize} numbers<input placeholder={gameConfig.drawSize===5?"03 08 12 22 24":"05 14 22 28 32 39"} {...register("numbers")}/><small>{errors.numbers?.message}</small></label>{gameConfig.specialMax>0&&<label>{t("common.bonus")}<input type="number" min="1" max={gameConfig.specialMax} {...register("bonus",{setValueAs:value=>value===""?undefined:Number(value)})}/><small>{errors.bonus?.message}</small></label>}<label>{selectedGame==="power655"?t("common.jackpot1"):"Jackpot"} (VND)<input type="number" {...register("jackpot",{valueAsNumber:true})}/></label>{selectedGame==="power655"&&<label>{t("common.jackpot2")} (VND)<input type="number" {...register("jackpot2",{setValueAs:value=>value===""?undefined:Number(value)})}/></label>}<Button type="submit">{editingId?"Save changes":"Save draw"}</Button></form></Card>}
+  <Card className="table-card"><div className="table-scroll"><table><thead><tr><th>Date</th>{Array.from({length:gameConfig.drawSize},(_,i)=><th key={i}>N{i+1}</th>)}{gameConfig.specialMax>0&&<th>{t("common.bonus")}</th>}<th>{selectedGame==="power655"?t("common.jackpot1"):"Jackpot"}</th>{selectedGame==="power655"&&<th>{t("common.jackpot2")}</th>}<th>Actions</th></tr></thead><tbody>{[...draws].reverse().map(draw=><tr key={draw.id}><td>{format(parseISO(draw.date),"dd/MM/yyyy")}</td>{draw.numbers.map((n,i)=><td key={n}><NumberBall number={n} index={i} small/></td>)}{gameConfig.specialMax>0&&<td>{draw.bonus?<NumberBall number={draw.bonus} index={5} small/>:"-"}</td>}<td>{draw.jackpot?`${draw.jackpot.toLocaleString("en-US")} VND`:t("common.unavailable")}</td>{selectedGame==="power655"&&<td>{draw.jackpot2?`${draw.jackpot2.toLocaleString("en-US")} VND`:t("common.unavailable")}</td>}<td><div className="row-actions"><Button className="icon secondary" aria-label={`Edit draw ${draw.date}`} onClick={()=>startEdit(draw)}><Pencil size={14}/></Button><Button className="icon danger" aria-label={`Delete draw ${draw.date}`} onClick={()=>removeDraw(draw.id)}><Trash2 size={15}/></Button></div></td></tr>)}</tbody></table></div></Card></>;
 }
 
 export function SinglesPage() {
@@ -105,7 +106,7 @@ export function SinglesPage() {
     {id:"completedGaps",accessorFn:row=>row.gap.completedGapCount,header:t("pages.completedGaps")},
     {id:"gapScore",accessorFn:row=>row.models.gap.normalizedScore,header:()=><span title={t(effectiveSettings.gapModelVersion==="v2"?"pages.gapEngineV2":"pages.gapEngineLegacy")}>{t("pages.gapScore")}</span>,cell:info=>info.getValue<number>().toFixed(2)},
     {accessorKey:"technicalScore",header:t("pages.aggregateScore"),cell:info=><ScoreBadge score={info.getValue<number>()}/>},
-    {id:"support",accessorFn:row=>row.gap.completedGapCount>=minCompletedGaps*2?"HIGH":row.gap.completedGapCount>=minCompletedGaps?"MEDIUM":"LOW",header:t("pages.dataSupport")},
+    {id:"support",accessorFn:row=>row.gap.completedGapCount>=minCompletedGaps*2?"HIGH":row.gap.completedGapCount>=minCompletedGaps?"MEDIUM":"LOW",header:t("pages.dataSupport"),cell:info=>t(`confidence.${String(info.getValue()).toLowerCase()}` as TranslationKey)},
     {accessorKey:"maxGap",header:t("pages.maxGap"),cell:info=>info.getValue<number|null>()??"—"},
     {id:"inside",accessorFn:row=>row.inside?t("common.inside"):t("common.outside"),header:t("pages.io")},
     {id:"parity",accessorFn:row=>row.parity==="EVEN"?t("common.even"):t("common.odd"),header:t("pages.eo")},
@@ -150,11 +151,11 @@ export function CombinationsPage(){
   const filteredPortfolio=useMemo(()=>{
     if(!independentFilterConfig.enabled)return null;
     const filterSettings=settingsForPreset(settings,independentFilterConfig.preset);
-    const maxNumber=LOTTERY_GAMES[selectedGame].maxNumber;
-    const singles=calculateSingles(filtered,filterSettings,maxNumber);
-    const pairs=calculatePairs(filtered,maxNumber);
-    const triples=calculateTriples(filtered,maxNumber);
-    const scores=scoreCandidateCombinations(candidateUniverse.map(item=>item.numbers),singles,pairs,triples,filterSettings,filtered);
+    const {maxNumber,insideNumbers}=LOTTERY_GAMES[selectedGame];
+    const singles=calculateSingles(filtered,filterSettings,maxNumber,insideNumbers);
+    const pairs=calculatePairs(filtered,maxNumber,insideNumbers);
+    const triples=calculateTriples(filtered,maxNumber,insideNumbers);
+    const scores=scoreCandidateCombinations(candidateUniverse.map(item=>item.numbers),singles,pairs,triples,filterSettings,filtered,insideNumbers);
     return selectFilteredPortfolio(candidateUniverse,scores,predictions,independentFilterConfig.ranges,filterSettings,independentFilterConfig.resultCount,independentFilterConfig.sort);
   },[independentFilterConfig,settings,selectedGame,filtered,candidateUniverse,predictions]);
   const applyRanges=(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();if(!validCombinationScoreRanges(draftRanges)){setRangeError(true);return;}updateIndependentFilterConfig({enabled:true,preset:draftPreset,ranges:draftRanges,resultCount:draftCount,sort:draftSort});setRangeError(false);setFilterOpen(false);};
@@ -162,8 +163,8 @@ export function CombinationsPage(){
   const columns=useMemo<ColumnDef<CandidateCombination>[]>(()=>[
     {accessorKey:"rank",header:t("pages.mainRank")},{id:"combination",accessorFn:row=>row.numbers.map(pad).join(" - "),header:t("common.combination")},{accessorKey:"total",header:t("pages.sum")},{accessorKey:"digitalRoot",header:t("pages.root")},{id:"evenOdd",accessorFn:row=>`${row.evenCount}/${row.oddCount}`,header:t("common.evenOdd")},{id:"insideOutside",accessorFn:row=>`${row.insideCount}/${row.outsideCount}`,header:t("common.insideOutside")},{accessorKey:"singleScore",header:t("pages.single"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"pairScore",header:t("common.pair"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"tripleScore",header:t("common.triple"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"structureScore",header:t("prediction.structure"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"totalScore",header:t("pages.proposalScore"),cell:info=>info.getValue<number>().toFixed(2)},
     ...(selectedGame==="power655"&&powerSuggestionMode==="experimental"?[{id:"selectionReason",accessorFn:(row:CandidateCombination)=>row.selectionReason==="coverage"?t("pages.reasonCoverage"):t("pages.reasonScore"),header:t("pages.selectionReason")},{id:"selectionScore",accessorFn:(row:CandidateCombination)=>row.selectionScore??null,header:t("pages.selectionScore"),cell:(info:{getValue:()=>unknown})=>info.getValue()===null?"—":Number(info.getValue()).toFixed(2)}]:[]),
-    {id:"portfolioOverlap",accessorFn:row=>Math.max(0,...predictions.filter(other=>other!==row).map(other=>row.numbers.filter(number=>other.numbers.includes(number)).length)),header:t("pages.portfolioOverlap")},{accessorKey:"confidence",header:t("pages.dataSupport")},
-  ],[t,predictions,selectedGame,powerSuggestionMode]);
+    {accessorKey:"maxHistoricalOverlap",header:t("prediction.maxOverlap"),cell:info=>`${info.getValue<number>()}/${LOTTERY_GAMES[selectedGame].drawSize}`},{accessorKey:"confidence",header:t("pages.dataSupport"),cell:info=>t(`confidence.${String(info.getValue()).toLowerCase()}` as TranslationKey)},
+  ],[t,selectedGame,powerSuggestionMode]);
   const filteredColumns=useMemo<ColumnDef<NonNullable<typeof filteredPortfolio>["rows"][number]>[]>(()=>[
     {accessorKey:"filteredRank",header:t("common.rank")},{accessorKey:"mainRank",header:t("pages.mainRank"),cell:info=>info.getValue<number|null>()??t("pages.outsideMain")},{id:"candidateRank",accessorFn:row=>row.proposal.candidateRank??"",header:t("pages.candidateRank")},{id:"combination",accessorFn:row=>row.proposal.numbers.map(pad).join(" - "),header:t("common.combination")},{id:"proposalScore",accessorFn:row=>row.proposal.totalScore,header:t("pages.proposalScore"),cell:info=>info.getValue<number>().toFixed(2)},
     ...combinationScoreKeys.map(key=>({id:key,accessorFn:(row:NonNullable<typeof filteredPortfolio>["rows"][number])=>row.filter[key],header:t(scoreLabels[key]),cell:(info:{getValue:()=>unknown})=>Number(info.getValue()).toFixed(2)})),
@@ -181,9 +182,9 @@ export function CombinationsPage(){
 export function BacktestPage(){
   const {t}=useI18n();
   const labels=useTableLabels();
-  const {draws:megaDraws,powerDraws,selectedGame,settings,powerSuggestionMode,setPowerSuggestionMode}=useLotteryStore();
-  const draws=selectedGame==="power655"?powerDraws:megaDraws;
-  const maxNumber=LOTTERY_GAMES[selectedGame].maxNumber;
+  const {draws:megaDraws,powerDraws,lottoDraws,selectedGame,settings,powerSuggestionMode,setPowerSuggestionMode}=useLotteryStore();
+  const draws=selectedGame==="mega645"?megaDraws:selectedGame==="power655"?powerDraws:lottoDraws;
+  const {maxNumber,drawSize,insideNumbers}=LOTTERY_GAMES[selectedGame];
   const defaultRange=()=>({from:draws.at(-51)?.date??draws[0]?.date??"",to:draws.at(-1)?.date??""});
   const initial=defaultRange();
   const [fromDate,setFromDate]=useState(initial.from);
@@ -207,7 +208,7 @@ export function BacktestPage(){
   useEffect(()=>()=>{workerRef.current?.terminate();portfolioWorkerRef.current?.terminate();},[]);
   useEffect(()=>{portfolioWorkerRef.current?.terminate();setPortfolioData(null);setPortfolioRunning(false);setPortfolioFailed(false);},[draws,settings,selectedGame,fromDate,toDate,trainingDraws,preset,predictionCount,powerSuggestionMode]);
   const presets:[string,TranslationKey][]=[["Default","preset.default"],["Balanced","preset.balanced"],["Hot","preset.hot"],["Legacy Gap","preset.legacyGap"],["Gap + Frequency","preset.gapFrequency"],["Pair","preset.pair"],["Triple","preset.triple"],["Custom","preset.custom"]];
-  const parsedManual=useMemo(()=>parseCompactCombinations(manualInput,maxNumber),[manualInput,maxNumber]);
+  const parsedManual=useMemo(()=>parseCompactCombinations(manualInput,maxNumber,drawSize),[manualInput,maxNumber,drawSize]);
   const trainingAvailability=useMemo(()=>getBacktestTrainingWindows(draws,fromDate,toDate),[draws,fromDate,toDate]);
   const fullMode=trainingAvailability.windows.includes(trainingDraws);
   useEffect(()=>{if(!trainingAvailability.windows.includes(trainingDraws))setTrainingDraws(trainingAvailability.windows[0]??30);},[trainingAvailability,trainingDraws]);
@@ -229,7 +230,7 @@ export function BacktestPage(){
     workerRef.current=worker;
     worker.onmessage=({data:payload}:MessageEvent<BacktestPayload>)=>{backtestCache.set(cacheKey,payload);setData(payload);setRunning(false);worker.terminate();workerRef.current=null;};
     worker.onerror=()=>{setFailed(true);setRunning(false);worker.terminate();workerRef.current=null;};
-    worker.postMessage({draws,settings:effectiveSettings,maxNumber,fromDate,toDate,trainingDraws:activeTrainingDraws,predictionCount:activePredictionCount,manualProposedSets:activeManualSets,powerSuggestionMode});
+    worker.postMessage({draws,settings:effectiveSettings,maxNumber,drawSize,insideNumbers,fromDate,toDate,trainingDraws:activeTrainingDraws,predictionCount:activePredictionCount,manualProposedSets:activeManualSets,powerSuggestionMode});
   };
   const runManual=()=>{if(!parsedManual.valid||!fullMode){setManualError(true);return;}setManualError(false);run({manualProposedSets:parsedManual.combinations});};
   const runPortfolio=()=>{
@@ -238,7 +239,7 @@ export function BacktestPage(){
     const worker=new Worker(new URL("../backtest.worker.ts",import.meta.url),{type:"module"});portfolioWorkerRef.current=worker;
     worker.onmessage=({data:payload}:MessageEvent<{portfolioRolling:PortfolioRollingResult}>)=>{setPortfolioData(payload.portfolioRolling);setPortfolioRunning(false);worker.terminate();portfolioWorkerRef.current=null;};
     worker.onerror=()=>{setPortfolioFailed(true);setPortfolioRunning(false);worker.terminate();portfolioWorkerRef.current=null;};
-    worker.postMessage({draws,settings:settingsForPreset(settings,preset),maxNumber,fromDate,toDate,trainingDraws,predictionCount,portfolioRolling:true,powerSuggestionMode});
+    worker.postMessage({draws,settings:settingsForPreset(settings,preset),maxNumber,drawSize,insideNumbers,fromDate,toDate,trainingDraws,predictionCount,portfolioRolling:true,powerSuggestionMode});
   };
   const tableRows=useMemo<BacktestTableRow[]>(()=>data?.result.rows.flatMap(row=>row.predictions.map((prediction,index)=>({rank:index+1,combination:prediction.numbers.map(pad).join("-"),rate:prediction.rate,sum:prediction.total,root:prediction.digitalRoot,insideOutside:`${prediction.insideCount}/${prediction.outsideCount}`,evenOdd:`${prediction.evenCount}/${prediction.oddCount}`,single:prediction.singleScore,pair:prediction.pairScore,triple:prediction.tripleScore,structure:prediction.structureScore,totalScore:prediction.totalScore,matches:prediction.matches,actual:row.actual,evaluation:t(prediction.matches>=3?"pages.goodResult":"pages.referenceOnly")})))??[],[data,t]);
   const resultColumns=useMemo<ColumnDef<BacktestTableRow>[]>(()=>[
@@ -246,10 +247,10 @@ export function BacktestPage(){
     {id:"rate",accessorFn:row=>row.rate*100,header:t("pages.rate"),cell:info=>`${info.getValue<number>().toFixed(2)}%`},{accessorKey:"sum",header:t("pages.sum")},{accessorKey:"root",header:t("pages.root")},
     {accessorKey:"evenOdd",header:t("common.evenOdd")},{accessorKey:"insideOutside",header:t("common.insideOutside")},
     {accessorKey:"single",header:t("pages.single"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"pair",header:t("common.pair"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"triple",header:t("common.triple"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"structure",header:t("prediction.structure"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"totalScore",header:t("pages.totalScore"),cell:info=>info.getValue<number>().toFixed(2)},
-    {accessorKey:"matches",header:t("pages.matchCount"),cell:info=><strong className="backtest-match">{info.getValue<number>()}/6</strong>},
+    {accessorKey:"matches",header:t("pages.matchCount"),cell:info=><strong className="backtest-match">{info.getValue<number>()}/{drawSize}</strong>},
     {id:"actual",accessorFn:row=>row.actual.map(pad).join("-"),header:t("pages.actualResult"),cell:info=><div className="backtest-actual">{info.row.original.actual.map((number,index)=><NumberBall key={number} number={number} index={index} small/>)}</div>},
     {accessorKey:"evaluation",header:t("pages.evaluation"),cell:info=><span className={`backtest-grade grade-${Math.min(info.row.original.matches,3)}`}>{info.getValue<string>()}</span>},
-  ],[resultCount,t]);
+  ],[resultCount,t,drawSize]);
   return <div className="backtest-page">
     <PageTitle title={t("pages.backtestTitle")} subtitle={t("pages.backtestSubtitle")}/>
     <Card className="backtest-setup">
@@ -263,18 +264,18 @@ export function BacktestPage(){
       </div>
       <div className="backtest-note"><Info size={15}/><span>{t("pages.backtestNote")}</span></div>
       <div className={`backtest-mode ${fullMode?"ready":"invalid"}`} role={fullMode?"status":"alert"}>{fullMode?t("pages.fullModeReady",{count:trainingAvailability.priorDraws}):t("pages.trainingRangeError",{count:trainingAvailability.priorDraws})}</div>
-      <div className="manual-test"><label><span>{t("pages.manualInput")}</span><input value={manualInput} onChange={event=>{setManualInput(event.target.value);setManualError(false);}} className={manualError?"invalid":""} aria-invalid={manualError} aria-describedby="manual-test-help" placeholder="101436374143"/></label><Button className="secondary" onClick={runManual} disabled={running||!fullMode}><Play size={15}/>{t("pages.runTest")}</Button><small id="manual-test-help">{t("pages.manualInputHint")}</small>{manualError&&<><div className="manual-invalid-values">{parsedManual.entries.map((entry,entryIndex)=>{const compact=entry.replace(/[\s-]+/g,"");return /^\d{12}$/.test(compact)?<span className="manual-entry" key={`${entry}-${entryIndex}`}>{(compact.match(/\d{2}/g)??[]).map((chunk,chunkIndex)=><b className={parsedManual.issues.some(issue=>issue.entryIndex===entryIndex&&(issue.chunkIndex===chunkIndex||issue.chunkIndex===undefined))?"invalid":""} key={chunkIndex}>{chunk}</b>)}</span>:<b className="invalid" key={`${entry}-${entryIndex}`}>{entry}</b>;})}</div><p className="manual-error" role="alert">{!parsedManual.valid?t("pages.manualInputError",{max:maxNumber}):t("pages.manualInputRangeError")}</p></>}</div>
+      <div className="manual-test"><label><span>{t("pages.manualInput")}</span><input value={manualInput} onChange={event=>{setManualInput(event.target.value);setManualError(false);}} className={manualError?"invalid":""} aria-invalid={manualError} aria-describedby="manual-test-help" placeholder={drawSize===5?"0308122224":"101436374143"}/></label><Button className="secondary" onClick={runManual} disabled={running||!fullMode}><Play size={15}/>{t("pages.runTest")}</Button><small id="manual-test-help">{t(drawSize===5?"pages.manualInputHintLotto":"pages.manualInputHint")}</small>{manualError&&<><div className="manual-invalid-values">{parsedManual.entries.map((entry,entryIndex)=>{const compact=entry.replace(/[\s-]+/g,"");return new RegExp(`^\\d{${drawSize*2}}$`).test(compact)?<span className="manual-entry" key={`${entry}-${entryIndex}`}>{(compact.match(/\d{2}/g)??[]).map((chunk,chunkIndex)=><b className={parsedManual.issues.some(issue=>issue.entryIndex===entryIndex&&(issue.chunkIndex===chunkIndex||issue.chunkIndex===undefined))?"invalid":""} key={chunkIndex}>{chunk}</b>)}</span>:<b className="invalid" key={`${entry}-${entryIndex}`}>{entry}</b>;})}</div><p className="manual-error" role="alert">{!parsedManual.valid?t(drawSize===5?"pages.manualInputErrorLotto":"pages.manualInputError",{max:maxNumber}):t("pages.manualInputRangeError")}</p></>}</div>
       <Button onClick={()=>run({manualProposedSets:null})} disabled={running||!fullMode}>{running?<LoaderCircle className="spin" size={15}/>:<Play size={15}/>} {running?t("pages.backtestLoading"):t("pages.runBacktest")}</Button>
       <Button className="secondary" onClick={runPortfolio} disabled={portfolioRunning||!fromDate||!toDate||fromDate>toDate}>{portfolioRunning?<LoaderCircle className="spin" size={15}/>:<Play size={15}/>} {t("pages.runRollingPortfolio")}</Button>
     </Card>
     {portfolioRunning&&<Card role="status">{t("pages.rollingLoading")}</Card>}
     {portfolioFailed&&<Card role="alert">{t("pages.backtestError")}</Card>}
-    {portfolioData&&<Card><CardHeader title={t("pages.rollingPortfolioResults")} subtitle={t("pages.rollingPortfolioScope",{evaluated:portfolioData.evaluatedTargetCount,skipped:portfolioData.skippedTrainingCount,window:portfolioData.trainingWindow,tickets:portfolioData.requestedTicketCount})}/><div className="kpi-grid backtest-kpis">{([3,4,5,6] as const).map(threshold=>{const key=threshold===6?"six":`atLeast${threshold}` as "atLeast3"|"atLeast4"|"atLeast5";return <Card key={threshold}><span>≥{threshold}/6</span><b>{(portfolioData.hitRates[key]*100).toFixed(1)}%</b><small>95% CI {(portfolioData.confidence95[key][0]*100).toFixed(1)}–{(portfolioData.confidence95[key][1]*100).toFixed(1)}%</small></Card>;})}</div><p>{t("pages.rollingTicketCount",{min:portfolioData.minimumTicketCount,mean:portfolioData.meanTicketCount.toFixed(1),requested:portfolioData.requestedTicketCount})}</p></Card>}
+    {portfolioData&&<Card><CardHeader title={t("pages.rollingPortfolioResults")} subtitle={t("pages.rollingPortfolioScope",{evaluated:portfolioData.evaluatedTargetCount,skipped:portfolioData.skippedTrainingCount,window:portfolioData.trainingWindow,tickets:portfolioData.requestedTicketCount})}/><div className="kpi-grid backtest-kpis">{([3,4,5,6] as const).filter(threshold=>threshold<=drawSize).map(threshold=>{const key=threshold===6?"six":`atLeast${threshold}` as "atLeast3"|"atLeast4"|"atLeast5";return <Card key={threshold}><span>≥{threshold}/{drawSize}</span><b>{(portfolioData.hitRates[key]*100).toFixed(1)}%</b><small>95% CI {(portfolioData.confidence95[key][0]*100).toFixed(1)}–{(portfolioData.confidence95[key][1]*100).toFixed(1)}%</small></Card>;})}</div><p>{t("pages.rollingTicketCount",{min:portfolioData.minimumTicketCount,mean:portfolioData.meanTicketCount.toFixed(1),requested:portfolioData.requestedTicketCount})}</p></Card>}
     {failed&&<Card className="backtest-loading" role="alert">{t("pages.backtestError")}</Card>}
     {!data&&!failed&&!running&&<Card className="backtest-loading">{t("pages.backtestReady")}</Card>}
     {running&&<Card className="backtest-loading" role="status"><LoaderCircle className="spin" size={18}/>{t("pages.backtestLoading")}</Card>}
     {data&&<>
-      <div className="kpi-grid backtest-kpis"><Card><span>{t("pages.tests")}</span><b>{data.result.tests}</b></Card><Card><span>{t("pages.averageMatches")}</span><b>{data.result.average.toFixed(2)}/6</b></Card><Card><span>{t("pages.bestMatch")}</span><b>{data.result.best}/6</b></Card>{!data.manualMode&&<Card><span>{t("pages.modelHitRate")}</span><b>{(data.rolling.modelTop10HitRate*100).toFixed(1)}%</b></Card>}</div>
+      <div className="kpi-grid backtest-kpis"><Card><span>{t("pages.tests")}</span><b>{data.result.tests}</b></Card><Card><span>{t("pages.averageMatches")}</span><b>{data.result.average.toFixed(2)}/{drawSize}</b></Card><Card><span>{t("pages.bestMatch")}</span><b>{data.result.best}/{drawSize}</b></Card>{!data.manualMode&&<Card><span>{t("pages.modelHitRate")}</span><b>{(data.rolling.modelTop10HitRate*100).toFixed(1)}%</b></Card>}</div>
       <section className="backtest-results" aria-labelledby="backtest-results-title"><div className="backtest-results-heading"><div><h2 id="backtest-results-title">{t("pages.backtestResults")}</h2><p>{t("pages.backtestResultsSubtitle")}</p></div></div><DataTable data={tableRows} columns={resultColumns} labels={labels} hideRowCount/></section>
       <p className="disclaimer"><Info size={14}/>{t("pages.backtestDisclaimer")}</p>
     </>}
@@ -282,7 +283,8 @@ export function BacktestPage(){
 }
 export function SettingsPage(){
   const {settings,updateSettings,resetSettings,selectedGame}=useLotteryStore();
-  const maxTotal=selectedGame==="power655"?315:255;
+  const {drawSize,maxNumber}=LOTTERY_GAMES[selectedGame];
+  const maxTotal=drawSize*maxNumber-drawSize*(drawSize-1)/2;
   const [invalidTotal,setInvalidTotal]=useState(false);
   useEffect(()=>setInvalidTotal(false),[selectedGame]);
   const {t}=useI18n();

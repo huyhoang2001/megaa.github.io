@@ -1,14 +1,14 @@
 export type Draw = {
   id: string;
   date: string;
-  numbers: [number, number, number, number, number, number];
+  numbers: number[];
   bonus?: number;
   jackpot: number;
   jackpot2?: number;
 };
 
 export type PeriodPreset = "last10" | "last20" | "last30" | "last40" | "last50" | "last60" | "last100" | "last6months" | "last1year" | "all" | "custom";
-export type LotteryGame = "mega645" | "power655";
+export type LotteryGame = "mega645" | "power655" | "lotto535";
 export type PowerSuggestionMode = "standard" | "experimental";
 export type ThemeMode = "light" | "dark" | "system";
 export type LanguageMode = "vi" | "en";
@@ -89,10 +89,13 @@ export type PairStats = { a: number; b: number; key: string; count: number; rate
 export type TripleStats = { numbers: [number, number, number]; key: string; count: number; rate: number; lift: number; confidence: Confidence; insideCount: number; outsideCount: number; evenCount: number; oddCount: number; rank: number };
 export type CandidateCombination = { numbers: number[]; total: number; digitalRoot: number; evenCount: number; oddCount: number; insideCount: number; outsideCount: number; singleScore: number; pairScore: number; tripleScore: number; structureScore: number; noveltyScore: number; maxHistoricalOverlap: number; totalScore: number; confidence: Confidence; valid: boolean; rank?: number; candidateRank?:number; selectionReason?:"score"|"coverage"; selectionScore?:number };
 
+export const LOTTO535_INSIDE_NUMBERS=[2,3,4,5,6,7,8,9,10,11,13,14,15,16,18,21,22,23,24,26,29,34,35] as const;
+const COMMON_INSIDE_NUMBERS=[2,3,4,5,6,7,8,9,10,11,13,14,15,16,18,21,22,23,24,26,29,34,35,36,37,39,42,47,55];
 export const LOTTERY_GAMES={
-  mega645:{id:"mega645",name:"Mega 6/45",shortName:"MEGA",maxNumber:45},
-  power655:{id:"power655",name:"Power 6/55",shortName:"POWER",maxNumber:55},
-} as const satisfies Record<LotteryGame,{id:LotteryGame;name:string;shortName:string;maxNumber:number}>;
+  mega645:{id:"mega645",name:"Mega 6/45",shortName:"MEGA",drawSize:6,maxNumber:45,insideNumbers:COMMON_INSIDE_NUMBERS.filter(number=>number<=45),specialMax:0},
+  power655:{id:"power655",name:"Power 6/55",shortName:"POWER",drawSize:6,maxNumber:55,insideNumbers:COMMON_INSIDE_NUMBERS,specialMax:55},
+  lotto535:{id:"lotto535",name:"Lotto 5/35",shortName:"LOTTO",drawSize:5,maxNumber:35,insideNumbers:LOTTO535_INSIDE_NUMBERS,specialMax:12},
+} as const satisfies Record<LotteryGame,{id:LotteryGame;name:string;shortName:string;drawSize:number;maxNumber:number;insideNumbers:readonly number[];specialMax:number}>;
 
 export const INSIDE_SET = new Set([2,3,4,5,6,7,8,9,10,11,13,14,15,16,18,21,22,23,24,26,29,34,35,36,37,39,42,47,55]);
 

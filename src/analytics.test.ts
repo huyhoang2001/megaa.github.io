@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculatePortfolioCoverage, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, digitalRoot, exactTopNumbers, filterCombinationsByNumbers, filterCombinationsByScores, filterCompleteCalendarMonths, filterDraws, generateCandidateUniverse, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, percentileRank, round2, runPortfolioRollingBacktest, runRollingBacktest, scoreCandidateCombinations, selectExperimentalPowerPortfolio, selectFilteredPortfolio, selectPortfolio, validCombinationScoreRanges, weightedAverage } from "./analytics";
 import type { CombinationScoreRanges } from "./analytics";
-import { DEFAULT_SETTINGS, INSIDE_SET } from "./domain";
+import { DEFAULT_SETTINGS, INSIDE_SET, LOTTO535_INSIDE_NUMBERS } from "./domain";
 import type { Draw } from "./domain";
 import history from "./data/mega645-history.json";
 import powerHistory from "./data/power655-history.json";
+import lottoHistory from "./data/lotto535-history.json";
 import { settingsForPreset } from "./hooks";
 import { format, parseISO, startOfMonth, subMonths } from "date-fns";
 
@@ -24,6 +25,17 @@ const draws: Draw[] = [
 ];
 
 describe("analytics", () => {
+  it("scores Lotto 5/35 predictions with its five-number draw size and inside range",()=>{
+    const lotto=lottoHistory.draws as Draw[],inside=new Set(LOTTO535_INSIDE_NUMBERS),settings={...DEFAULT_SETTINGS,minTotal:35,allowedParity:["3/2","2/3"],allowedInsideOutside:["3/2","4/1","2/3"]};
+    const singles=calculateSingles(lotto.slice(0,80),settings,35,LOTTO535_INSIDE_NUMBERS);
+    const pairs=calculatePairs(lotto.slice(0,80),35,LOTTO535_INSIDE_NUMBERS),triples=calculateTriples(lotto.slice(0,80),35,LOTTO535_INSIDE_NUMBERS);
+    const [candidate]=scoreCandidateCombinations([[3,8,12,21,24]],singles,pairs,triples,settings,lotto.slice(0,80),LOTTO535_INSIDE_NUMBERS);
+    expect(candidate.numbers).toHaveLength(5);
+    expect(candidate.valid).toBe(true);
+    expect(candidate.insideCount).toBe(4);
+    expect(singles.find(item=>item.number===3)?.inside).toBe(inside.has(3));
+    expect(parseCompactCombinations("0308122224",35,5).valid).toBe(true);
+  });
   it("filters periods without changing order", () => expect(filterDraws(draws,"last10").map(d=>d.id)).toEqual(draws.slice(-10).map(d=>d.id)));
   it("selects the latest 20 draws", () => {
     const real=history.draws as Draw[];

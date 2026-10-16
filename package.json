@@ -8,7 +8,8 @@
     "build": "tsc -b && vite build",
     "sync:mega645": "node scripts/sync-mega645.mjs",
     "sync:power655": "node scripts/sync-power655.mjs",
-    "sync:data": "npm run sync:mega645 && npm run sync:power655",
+    "sync:lotto535": "node scripts/sync-lotto535.mjs",
+    "sync:data": "npm run sync:mega645 && npm run sync:power655 && npm run sync:lotto535",
     "test": "vitest run",
     "test:watch": "vitest"
   },

@@ -47,12 +47,12 @@ jobs:
         if: github.event_name != 'push'
         shell: bash
         run: |
-          if git diff --quiet -- src/data/mega645-history.json src/data/power655-history.json; then
+          if git diff --quiet -- src/data/mega645-history.json src/data/power655-history.json src/data/lotto535-history.json; then
             echo "Lottery data is already current."
           else
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git add src/data/mega645-history.json src/data/power655-history.json
+            git add src/data/mega645-history.json src/data/power655-history.json src/data/lotto535-history.json
             git commit -m "chore(data): refresh Vietlott history"
             git push
           fi

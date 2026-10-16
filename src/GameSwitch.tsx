@@ -7,6 +7,6 @@ export default function GameSwitch(){
   const {t}=useI18n();
   const {selectedGame,setSelectedGame}=useLotteryStore();
   return <div className="game-switch" role="group" aria-label={t("game.selector")}>
-    {(Object.keys(LOTTERY_GAMES) as LotteryGame[]).map(game=><button type="button" key={game} className={selectedGame===game?"active":""} aria-pressed={selectedGame===game} onClick={()=>setSelectedGame(game)}>{LOTTERY_GAMES[game].name}</button>)}
+    {(Object.keys(LOTTERY_GAMES) as LotteryGame[]).map(game=><button type="button" key={game} className={selectedGame===game?"active":""} aria-pressed={selectedGame===game} onClick={()=>setSelectedGame(game)}>{t(`game.${game}`)}</button>)}
   </div>;
 }
