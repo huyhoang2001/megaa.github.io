@@ -13,6 +13,26 @@ it("maps old scoring preset names to the new Gap presets",()=>{
   expect(settingsForPreset(DEFAULT_SETTINGS,"Gap+Freq")).toMatchObject({gapModelVersion:"v2",consensusWeights:{frequency:25,momentum:5,gap:65,association:5},comboWeightsV2:{single:32,pair:18,gap:35,structure:8,novelty:7}});
 });
 
+it("forces recent-draw cooldown off for Lotto even when stored settings enable it",()=>{
+  const previous=useLotteryStore.getState();
+  const draw:Draw={id:"lotto",date:"2026-10-10",numbers:[2,3,4,5,6],bonus:7,jackpot:1};
+  const settings={...DEFAULT_SETTINGS,minTotal:35,recentDrawCooldown:{...DEFAULT_SETTINGS.recentDrawCooldown,enabled:true}};
+  const container=document.createElement("div");
+  document.body.append(container);
+  const root=createRoot(container);
+  let result:ReturnType<typeof useAnalytics>;
+  function Probe(){result=useAnalytics();return null;}
+  try{
+    useLotteryStore.setState({selectedGame:"lotto535",lottoDraws:[draw],settings});
+    act(()=>root.render(createElement(Probe)));
+    expect(result!.cooldownNumbers.size).toBe(0);
+  }finally{
+    act(()=>root.unmount());
+    container.remove();
+    useLotteryStore.setState(previous);
+  }
+});
+
 it("does not recalculate analytics for display-only selector changes",()=>{
   const previous=useLotteryStore.getState();
   const draws:Draw[]=Array.from({length:100},(_,index)=>({id:String(index),date:new Date(Date.UTC(2026,0,index+1)).toISOString().slice(0,10),numbers:Array.from({length:6},(_,offset)=>((index*6+offset)%45)+1),jackpot:1}));

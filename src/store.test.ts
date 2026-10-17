@@ -18,6 +18,12 @@ describe("Power history persistence migration",()=>{
     expect(mergeSettings({allowedParity:["6/0","5/1","1/5","0/6"]}).allowedParity).toEqual(["3/3","4/2","2/4"]);
     expect(mergeSettings({allowedParity:["2/4","4/2"]}).allowedParity).toEqual(["2/4","4/2"]);
   });
+  it("merges and validates recent-draw cooldown preferences",()=>{
+    expect(mergeSettings().recentDrawCooldown).toEqual({enabled:true,draws:1,mode:"hard",includeBonus:false,softPenalty:25});
+    expect(mergeSettings({recentDrawCooldown:{...mergeSettings().recentDrawCooldown,mode:"soft",includeBonus:true}}).recentDrawCooldown).toMatchObject({mode:"soft",includeBonus:true});
+    expect(validSettings({...mergeSettings(),recentDrawCooldown:{...mergeSettings().recentDrawCooldown,draws:0}})).toBe(false);
+    expect(validSettings({...mergeSettings(),recentDrawCooldown:{...mergeSettings().recentDrawCooldown,softPenalty:51}})).toBe(false);
+  });
   it("restores official jackpot values and missing draws while preserving edits",()=>{
     const latest=powerHistory.draws.at(-1) as Draw;
     const stored:Draw[]=[

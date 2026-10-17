@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backtest, backtestRange, buildCandidateNumberPool, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculatePortfolioCoverage, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, calibrateProposalScore, digitalRoot, exactTopNumbers, filterCombinationsByNumbers, filterCombinationsByScores, filterCompleteCalendarMonths, filterDraws, generateCandidateUniverse, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, percentileRank, periodHalfLife, round2, runPortfolioRollingBacktest, runRollingBacktest, scoreCandidateCombinations, selectExperimentalPowerPortfolio, selectFilteredPortfolio, selectPortfolio, validCombinationScoreRanges, weightedAverage } from "./analytics";
+import { backtest, backtestRange, buildCandidateNumberPool, buildRecentDrawCooldownSet, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculatePortfolioCoverage, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, calibrateProposalScore, digitalRoot, exactTopNumbers, filterCombinationsByNumbers, filterCombinationsByScores, filterCompleteCalendarMonths, filterDraws, generateCandidateUniverse, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, percentileRank, periodHalfLife, round2, runPortfolioRollingBacktest, runRollingBacktest, scoreCandidateCombinations, selectExperimentalPowerPortfolio, selectFilteredPortfolio, selectPortfolio, validCombinationScoreRanges, weightedAverage } from "./analytics";
 import type { CombinationScoreRanges } from "./analytics";
 import { DEFAULT_SETTINGS, INSIDE_SET, LOTTO535_INSIDE_NUMBERS } from "./domain";
 import type { Draw, SingleNumberStats } from "./domain";
@@ -90,6 +90,33 @@ describe("analytics", () => {
     expect(states.filter(state=>state==="NEUTRAL")).toHaveLength(7);
     expect(states.filter(state=>state==="HOT")).toHaveLength(4);
     expect(states.filter(state=>state==="COOL")).toHaveLength(3);
+  });
+  it("builds the cooldown from newest full-history draws and optionally includes specials",()=>{
+    const older:Draw={id:"9",date:"2026-01-01",numbers:[1,2,3,4,5,6],bonus:7,jackpot:0};
+    const latest:Draw={id:"10",date:"2026-01-08",numbers:[8,9,10,11,12,13],bonus:14,jackpot:0};
+    const options={enabled:true,draws:1,mode:"hard" as const,includeBonus:false,softPenalty:25};
+    expect([...buildRecentDrawCooldownSet([latest,older],options)]).toEqual(latest.numbers);
+    expect([...buildRecentDrawCooldownSet([older,latest],{...options,includeBonus:true})]).toEqual([...latest.numbers,14]);
+    expect(buildRecentDrawCooldownSet([older],{...options,enabled:false}).size).toBe(0);
+    expect(buildRecentDrawCooldownSet([older,latest],{...options,draws:2}).has(1)).toBe(true);
+  });
+  it("keeps hard-cooldown numbers out of candidate pools and generated tickets",()=>{
+    const real=history.draws as Draw[],training=real.slice(-100),latest=real.at(-1)!;
+    const settings={...DEFAULT_SETTINGS,candidatePoolSize:14};
+    const singles=calculateSingles(training,settings,45),pairs=calculatePairs(training,45),triples=calculateTriples(training,45);
+    const cooldown={numbers:new Set(latest.numbers),mode:"hard" as const,softPenalty:25};
+    expect(buildCandidateNumberPool(singles,settings,20,6,cooldown).some(number=>cooldown.numbers.has(number))).toBe(false);
+    const candidates=generateCandidateUniverse(singles,pairs,triples,settings,training,undefined,training,20,cooldown);
+    expect(candidates.length).toBeGreaterThan(0);
+    expect(candidates.every(candidate=>candidate.numbers.every(number=>!cooldown.numbers.has(number)))).toBe(true);
+    const nextDraw:Draw={...latest,id:"next",date:"2026-10-17",numbers:Array.from({length:45},(_,index)=>index+1).filter(number=>!latest.numbers.includes(number)).slice(0,6)};
+    expect(buildRecentDrawCooldownSet([latest,nextDraw],{enabled:true,draws:1,mode:"hard",includeBonus:false,softPenalty:25}).has(latest.numbers[0])).toBe(false);
+  });
+  it("soft cooldown preserves candidate eligibility while lowering its single score",()=>{
+    const training=draws.slice(0,10),singles=calculateSingles(training,DEFAULT_SETTINGS),pairs=calculatePairs(training),triples=calculateTriples(training);
+    const numbers=[1,2,3,4,5,6],baseline=scoreCandidateCombinations([numbers],singles,pairs,triples,DEFAULT_SETTINGS,training)[0];
+    const cooled=scoreCandidateCombinations([numbers],singles,pairs,triples,DEFAULT_SETTINGS,training,undefined,training,{numbers:new Set([1]),mode:"soft",softPenalty:25})[0];
+    expect(cooled.singleScore).toBeLessThan(baseline.singleScore);
   });
   it("calibrates proposal scores toward chance",()=>{
     expect(calibrateProposalScore(80)).toBe(74);

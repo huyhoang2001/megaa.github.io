@@ -20,5 +20,6 @@
   "comboWeightsV2": { "single": 38, "pair": 28, "gap": 18, "structure": 10, "novelty": 6 },
   "backtestMinTrainingDraws": 50,
   "minCompletedGaps": 4,
-  "gapModelVersion": "legacy"
+  "gapModelVersion": "legacy",
+  "recentDrawCooldown": { "enabled": true, "draws": 1, "mode": "hard", "includeBonus": false, "softPenalty": 25 }
 }

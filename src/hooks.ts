@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { calculatePairs, calculateSingles, calculateTriples, filterDraws, generateCandidateUniverse, selectExperimentalPowerPortfolio, selectPortfolio } from "./analytics";
+import { buildCandidateNumberPool, buildRecentDrawCooldownSet, calculatePairs, calculateSingles, calculateTriples, filterDraws, generateCandidateUniverse, selectExperimentalPowerPortfolio, selectPortfolio } from "./analytics";
 import { useLotteryStore } from "./store";
 import type { AnalysisSettings } from "./domain";
 import { DEFAULT_SETTINGS, LOTTERY_GAMES } from "./domain";
@@ -28,20 +28,26 @@ export function useAnalytics(topCombinationCount?:number, skipPredictions=false)
     const triples = calculateTriples(filtered,gameConfig.maxNumber,gameConfig.insideNumbers);
     return { draws,filtered,singles,pairs,triples,selectedGame,gameConfig,effectiveSettings };
   }, [megaDraws,powerDraws,lottoDraws,selectedGame,settings,period,fromDate,toDate,scoringPreset]);
+  const cooldown=useMemo(()=>{
+    const configured=stats.effectiveSettings.recentDrawCooldown,config=selectedGame==="lotto535"?{...configured,enabled:false}:configured,numbers=buildRecentDrawCooldownSet(stats.draws,config);
+    const base={numbers,mode:config.mode,softPenalty:config.softPenalty};
+    const fallback=config.enabled&&config.mode==="hard"&&buildCandidateNumberPool(stats.singles,stats.effectiveSettings,stats.effectiveSettings.topCombinationCount,stats.gameConfig.drawSize,base).length<stats.gameConfig.drawSize;
+    return {...base,mode:fallback?"soft" as const:config.mode,fallback};
+  },[stats.draws,stats.singles,stats.effectiveSettings,stats.gameConfig.drawSize,selectedGame]);
   const requestedCount=Math.max(dashboardFilters.predictionCount,topCombinationCount??0);
   const candidatePoolRequest=requestedCount>=5?5:requestedCount;
-  const candidateUniverse=useMemo(()=>skipPredictions?[]:generateCandidateUniverse(stats.singles,stats.pairs,stats.triples,stats.effectiveSettings,stats.filtered,stats.gameConfig.insideNumbers,stats.draws,candidatePoolRequest),[stats,skipPredictions,candidatePoolRequest]);
+  const candidateUniverse=useMemo(()=>skipPredictions?[]:generateCandidateUniverse(stats.singles,stats.pairs,stats.triples,stats.effectiveSettings,stats.filtered,stats.gameConfig.insideNumbers,stats.draws,candidatePoolRequest,cooldown),[stats,skipPredictions,candidatePoolRequest,cooldown]);
   const predictions=useMemo(()=>{
     if(skipPredictions)return [];
-    const select=(candidates:typeof candidateUniverse,allowRelaxedOverlap=false)=>selectedGame==="power655"&&powerSuggestionMode==="experimental"?selectExperimentalPowerPortfolio(candidates,stats.singles,stats.pairs,stats.triples,stats.effectiveSettings,stats.filtered,requestedCount,stats.draws,stats.gameConfig.insideNumbers,allowRelaxedOverlap):selectPortfolio(candidates,stats.effectiveSettings,requestedCount,allowRelaxedOverlap);
+    const select=(candidates:typeof candidateUniverse,allowRelaxedOverlap=false)=>selectedGame==="power655"&&powerSuggestionMode==="experimental"?selectExperimentalPowerPortfolio(candidates,stats.singles,stats.pairs,stats.triples,stats.effectiveSettings,stats.filtered,requestedCount,stats.draws,stats.gameConfig.insideNumbers,allowRelaxedOverlap,cooldown):selectPortfolio(candidates,stats.effectiveSettings,requestedCount,allowRelaxedOverlap);
     let result=select(candidateUniverse);
     if(result.length<requestedCount){
       const expandedSettings={...stats.effectiveSettings,candidatePoolSize:Math.min(stats.gameConfig.maxNumber,stats.effectiveSettings.candidatePoolSize+4)};
-      const expanded=generateCandidateUniverse(stats.singles,stats.pairs,stats.triples,expandedSettings,stats.filtered,stats.gameConfig.insideNumbers,stats.draws,candidatePoolRequest);
+      const expanded=generateCandidateUniverse(stats.singles,stats.pairs,stats.triples,expandedSettings,stats.filtered,stats.gameConfig.insideNumbers,stats.draws,candidatePoolRequest,cooldown);
       const candidates=[...new Map([...candidateUniverse,...expanded].map(item=>[item.numbers.join("-"),item])).values()];
       result=select(candidates,true);
     }
     return result;
-  },[candidateUniverse,stats,selectedGame,powerSuggestionMode,requestedCount,candidatePoolRequest,skipPredictions]);
-  return {...stats,candidateUniverse,predictions};
+  },[candidateUniverse,stats,selectedGame,powerSuggestionMode,requestedCount,candidatePoolRequest,skipPredictions,cooldown]);
+  return {...stats,candidateUniverse,predictions,cooldownNumbers:cooldown.numbers,cooldownMode:cooldown.mode,cooldownFallback:cooldown.fallback};
 }

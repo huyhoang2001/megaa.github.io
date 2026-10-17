@@ -40,7 +40,7 @@ const defaultDraws = history.draws as Draw[];
 const defaultPowerDraws = powerHistory.draws as Draw[];
 const defaultLottoDraws = lottoHistory.draws as Draw[];
 const defaultSettings = settingsJson as AnalysisSettings;
-const defaultLottoSettings={...defaultSettings,minTotal:35,candidatePoolSize:14,maxCombinationOverlap:3,allowedParity:["3/2","2/3"],allowedInsideOutside:["3/2","4/1","2/3"]};
+const defaultLottoSettings={...defaultSettings,minTotal:35,candidatePoolSize:14,maxCombinationOverlap:3,allowedParity:["3/2","2/3"],allowedInsideOutside:["3/2","4/1","2/3"],recentDrawCooldown:{...defaultSettings.recentDrawCooldown,enabled:false}};
 const previousDefaultRoots=[[8,5,3,1],[1,2,3,4,5,6,7,8,9]];
 const selectablePeriods=new Set<DashboardFilters["period"]>(["last30","last50","last100","last1year","all"]);
 export const normalizeDashboardFilters=(filters?:Partial<DashboardFilters>):DashboardFilters=>{
@@ -66,7 +66,9 @@ export const mergeBundledDraws=(stored:Draw[]|undefined,bundledDraws:Draw[]):Dra
   return [...official,...stored.filter(draw=>!bundledIds.has(draw.id))].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
 };
 export const mergeBundledPowerDraws=(stored?:Draw[]):Draw[]=>mergeBundledDraws(stored,defaultPowerDraws);
-export const mergeSettings=(settings?:Partial<AnalysisSettings>,defaults:AnalysisSettings=defaultSettings):AnalysisSettings=>({
+export const mergeSettings=(settings?:Partial<AnalysisSettings>,defaults:AnalysisSettings=defaultSettings):AnalysisSettings=>{
+  const cooldown=settings?.recentDrawCooldown;
+  return ({
   ...defaults,...settings,
   singleWeights:{...defaults.singleWeights,...settings?.singleWeights},
   combinationWeights:{...defaults.combinationWeights,...settings?.combinationWeights},
@@ -75,11 +77,14 @@ export const mergeSettings=(settings?:Partial<AnalysisSettings>,defaults:Analysi
   consensusWeights:{...defaults.consensusWeights,...settings?.consensusWeights},
   singleScoreWeights:{...defaults.singleScoreWeights,...settings?.singleScoreWeights},
   comboWeightsV2:settings?.comboWeightsV2?.single!==undefined?{...defaults.comboWeightsV2,...settings.comboWeightsV2}:settings?.comboWeightsV2?{single:(settings.comboWeightsV2 as AnalysisSettings["comboWeightsV2"]&{consensus?:number}).consensus??defaults.comboWeightsV2.single,pair:settings.comboWeightsV2.pair??defaults.comboWeightsV2.pair,gap:(settings.comboWeightsV2 as AnalysisSettings["comboWeightsV2"]&{triple?:number}).triple??defaults.comboWeightsV2.gap,structure:settings.comboWeightsV2.structure??defaults.comboWeightsV2.structure,novelty:settings.comboWeightsV2.novelty??defaults.comboWeightsV2.novelty}:{...defaults.comboWeightsV2},
-});
+  recentDrawCooldown:{enabled:typeof cooldown?.enabled==="boolean"?cooldown.enabled:defaults.recentDrawCooldown.enabled,draws:typeof cooldown?.draws==="number"&&Number.isInteger(cooldown.draws)&&cooldown.draws>=1&&cooldown.draws<=10?cooldown.draws:defaults.recentDrawCooldown.draws,mode:cooldown?.mode==="soft"?"soft":cooldown?.mode==="hard"?"hard":defaults.recentDrawCooldown.mode,includeBonus:typeof cooldown?.includeBonus==="boolean"?cooldown.includeBonus:defaults.recentDrawCooldown.includeBonus,softPenalty:typeof cooldown?.softPenalty==="number"&&Number.isFinite(cooldown.softPenalty)&&cooldown.softPenalty>=0&&cooldown.softPenalty<=50?cooldown.softPenalty:defaults.recentDrawCooldown.softPenalty},
+  });
+};
 export const validSettings=(settings:AnalysisSettings,maxNumber=55,drawSize=6)=>{
   const integer=(value:number,min:number,max:number)=>Number.isInteger(value)&&value>=min&&value<=max;
   const weights=(values:Record<string,number>)=>Object.values(values).every(value=>Number.isFinite(value)&&value>=0)&&Object.values(values).some(value=>value>0);
-  return integer(settings.candidatePoolSize,drawSize,Math.min(18,maxNumber))&&integer(settings.minTotal,0,drawSize*maxNumber-drawSize*(drawSize-1)/2)&&integer(settings.maxCombinationOverlap,0,drawSize-1)&&Number.isFinite(settings.weightedFrequencyHalfLife)&&settings.weightedFrequencyHalfLife>0&&integer(settings.minPairSupport,1,10000)&&integer(settings.minCompletedGaps??4,1,10000)&&weights(settings.consensusWeights)&&weights(settings.singleScoreWeights)&&weights(settings.comboWeightsV2);
+  const cooldown=settings.recentDrawCooldown;
+  return integer(settings.candidatePoolSize,drawSize,Math.min(18,maxNumber))&&integer(settings.minTotal,0,drawSize*maxNumber-drawSize*(drawSize-1)/2)&&integer(settings.maxCombinationOverlap,0,drawSize-1)&&Number.isFinite(settings.weightedFrequencyHalfLife)&&settings.weightedFrequencyHalfLife>0&&integer(settings.minPairSupport,1,10000)&&integer(settings.minCompletedGaps??4,1,10000)&&weights(settings.consensusWeights)&&weights(settings.singleScoreWeights)&&weights(settings.comboWeightsV2)&&typeof cooldown?.enabled==="boolean"&&integer(cooldown.draws,1,10)&&(cooldown.mode==="hard"||cooldown.mode==="soft")&&typeof cooldown.includeBonus==="boolean"&&Number.isFinite(cooldown.softPenalty)&&cooldown.softPenalty>=0&&cooldown.softPenalty<=50;
 };
 const normalizeFilterConfig=(config?:Partial<IndependentFilterConfig>):IndependentFilterConfig=>({...DEFAULT_INDEPENDENT_FILTER,...config,ranges:{...DEFAULT_INDEPENDENT_FILTER.ranges,...config?.ranges},preset:config?.preset==="Legacy Gap"||config?.preset==="Gap"?"Gap":config?.preset==="Gap + Frequency"?"Gap+Freq":config?.preset==="Triple"?"Default":config?.preset??DEFAULT_INDEPENDENT_FILTER.preset});
 export const validDraws=(draws:Draw[],game:LotteryGame|number)=>{

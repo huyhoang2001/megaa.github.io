@@ -50,6 +50,7 @@ export type AnalysisSettings = {
   backtestMinTrainingDraws: number;
   minCompletedGaps?: number;
   gapModelVersion?: "legacy" | "v2";
+  recentDrawCooldown: { enabled: boolean; draws: number; mode: "hard" | "soft"; includeBonus: boolean; softPenalty: number };
 };
 
 export type Confidence = "LOW" | "MEDIUM" | "HIGH";
@@ -125,6 +126,7 @@ export const DEFAULT_SETTINGS: AnalysisSettings = {
   backtestMinTrainingDraws: 50,
   minCompletedGaps: 4,
   gapModelVersion: "legacy",
+  recentDrawCooldown: { enabled: true, draws: 1, mode: "hard", includeBonus: false, softPenalty: 25 },
 };
 
 export const DEFAULT_FILTERS: DashboardFilters = { period: "last1year", analysisView: "Overview", scoringPreset: "Default", predictionCount: 5 };
