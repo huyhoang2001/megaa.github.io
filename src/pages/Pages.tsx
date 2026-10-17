@@ -9,7 +9,7 @@ import type { ColumnDef } from "@tanstack/react-table";
 import { calculateSingles, calculatePairs, calculateTriples, combinationScoreKeys, filterCombinationsByNumbers, getBacktestTrainingWindows, pad, parseCompactCombinations, scoreCandidateCombinations, selectFilteredPortfolio, validCombinationScoreRanges } from "../analytics";
 import type { CombinationScoreRanges } from "../analytics";
 import { LOTTERY_GAMES } from "../domain";
-import type { CandidateCombination, Draw, PairStats, SingleNumberStats, TripleStats } from "../domain";
+import type { CandidateCombination, Draw, NumberState, PairStats, SingleNumberStats, TripleStats } from "../domain";
 import { settingsForPreset, useAnalytics } from "../hooks";
 import { useLotteryStore } from "../store";
 import { Button, Card, CardHeader, NumberBall, ScoreBadge, Select } from "../ui";
@@ -139,7 +139,7 @@ export function CombinationsPage(){
   const {t}=useI18n();
   const labels=useTableLabels();
   const [predictionCount,setPredictionCount]=useState<20|50>(20);
-  const {predictions,candidateUniverse,filtered,draws}=useAnalytics(predictionCount);
+  const {predictions,candidateUniverse,filtered,draws,singles}=useAnalytics(predictionCount);
   const {settings,independentFilterConfig,updateIndependentFilterConfig,selectedGame,powerSuggestionMode,setPowerSuggestionMode}=useLotteryStore();
   const [query,setQuery]=useState("");
   const [filterOpen,setFilterOpen]=useState(false);
@@ -151,6 +151,7 @@ export function CombinationsPage(){
   const hasScoreFilters=independentFilterConfig.enabled;
   const activeRangeSummary=combinationScoreKeys.flatMap(key=>{const range=independentFilterConfig.ranges[key];return range.min!==""||range.max!==""?[`${t(scoreLabels[key])}: ${range.min||"0"}–${range.max||"100"}`]:[];}).join(" · ");
   const visiblePredictions=filterCombinationsByNumbers(predictions.slice(0,predictionCount),query);
+  const singleStates=useMemo(()=>new Map(singles.map(item=>[item.number,item.state])),[singles]);
   const filteredPortfolio=useMemo(()=>{
     if(!independentFilterConfig.enabled)return null;
     const filterSettings=settingsForPreset(settings,independentFilterConfig.preset);
@@ -164,10 +165,10 @@ export function CombinationsPage(){
   const applyRanges=(event:FormEvent<HTMLFormElement>)=>{event.preventDefault();if(!validCombinationScoreRanges(draftRanges)){setRangeError(true);return;}updateIndependentFilterConfig({enabled:true,preset:draftPreset,ranges:draftRanges,resultCount:draftCount,sort:draftSort});setRangeError(false);setFilterOpen(false);};
   const clearRanges=()=>{const ranges=blankScoreRanges();setDraftRanges(ranges);updateIndependentFilterConfig({enabled:false,ranges});setRangeError(false);};
   const columns=useMemo<ColumnDef<CandidateCombination>[]>(()=>[
-    {accessorKey:"rank",header:t("pages.mainRank")},{id:"combination",accessorFn:row=>row.numbers.map(pad).join(" - "),header:t("common.combination")},{accessorKey:"total",header:t("pages.sum")},{accessorKey:"digitalRoot",header:t("pages.root")},{id:"evenOdd",accessorFn:row=>`${row.evenCount}/${row.oddCount}`,header:t("common.evenOdd")},{id:"insideOutside",accessorFn:row=>`${row.insideCount}/${row.outsideCount}`,header:t("common.insideOutside")},{accessorKey:"singleScore",header:t("pages.single"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"pairScore",header:t("common.pair"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"gapScore",header:t("pages.gapScore"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"structureScore",header:t("prediction.structure"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"totalScore",header:t("pages.proposalScore"),cell:info=>info.getValue<number>().toFixed(2)},
+    {accessorKey:"rank",header:t("pages.mainRank")},{id:"combination",accessorFn:row=>row.numbers.map(pad).join(" - "),header:t("common.combination")},{id:"state",accessorFn:row=>row.numbers.map(number=>singleStates.get(number)==="DUE"?"MODERATE":singleStates.get(number)??"NEUTRAL").join(" "),header:t("pages.state"),cell:info=><div style={{display:"flex",gap:".4rem",whiteSpace:"nowrap"}}>{info.row.original.numbers.map(number=>{const state=singleStates.get(number)??"NEUTRAL";const label:Record<NumberState,string>={HOT:"HOT",NEUTRAL:"NEUTRAL",COOL:"COOL",DUE:"MODERATE",DROUGHT:"DROUGHT"};const icon:Record<NumberState,string>={HOT:"❤️",NEUTRAL:"💚",COOL:"💙",DUE:"💛",DROUGHT:"🩶"};return <span key={number} title={`${pad(number)}: ${label[state]}`} aria-label={`${pad(number)}: ${label[state]}`}>{icon[state]}</span>;})}</div>},{accessorKey:"total",header:t("pages.sum")},{accessorKey:"digitalRoot",header:t("pages.root")},{id:"evenOdd",accessorFn:row=>`${row.evenCount}/${row.oddCount}`,header:t("common.evenOdd")},{id:"insideOutside",accessorFn:row=>`${row.insideCount}/${row.outsideCount}`,header:t("common.insideOutside")},{accessorKey:"singleScore",header:t("pages.single"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"pairScore",header:t("common.pair"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"gapScore",header:t("pages.gapScore"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"structureScore",header:t("prediction.structure"),cell:info=>info.getValue<number>().toFixed(2)},{accessorKey:"totalScore",header:t("pages.proposalScore"),cell:info=>info.getValue<number>().toFixed(2)},
     ...(selectedGame==="power655"&&powerSuggestionMode==="experimental"?[{id:"selectionReason",accessorFn:(row:CandidateCombination)=>row.selectionReason==="coverage"?t("pages.reasonCoverage"):t("pages.reasonScore"),header:t("pages.selectionReason")}]:[]),
     {accessorKey:"maxHistoricalOverlap",header:t("prediction.maxOverlap"),cell:info=>`${info.getValue<number>()}/${LOTTERY_GAMES[selectedGame].drawSize}`},{accessorKey:"dataSupport",header:t("pages.dataSupport"),cell:info=>t(`confidence.${String(info.getValue()).toLowerCase()}` as TranslationKey)},
-  ],[t,selectedGame,powerSuggestionMode]);
+  ],[t,selectedGame,powerSuggestionMode,singleStates]);
   const filteredColumns=useMemo<ColumnDef<NonNullable<typeof filteredPortfolio>["rows"][number]>[]>(()=>[
     {accessorKey:"filteredRank",header:t("common.rank")},{accessorKey:"mainRank",header:t("pages.mainRank"),cell:info=>info.getValue<number|null>()??t("pages.outsideMain")},{id:"candidateRank",accessorFn:row=>row.proposal.candidateRank??"",header:t("pages.candidateRank")},{id:"combination",accessorFn:row=>row.proposal.numbers.map(pad).join(" - "),header:t("common.combination")},{id:"proposalScore",accessorFn:row=>row.proposal.totalScore,header:t("pages.proposalScore"),cell:info=>info.getValue<number>().toFixed(2)},
     ...combinationScoreKeys.map(key=>({id:key,accessorFn:(row:NonNullable<typeof filteredPortfolio>["rows"][number])=>row.filter[key],header:t(scoreLabels[key]),cell:(info:{getValue:()=>unknown})=>Number(info.getValue()).toFixed(2)})),
