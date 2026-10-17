@@ -123,7 +123,7 @@ export default function Dashboard() {
   const { dashboardFilters: filters, updateDashboardFilters, powerSuggestionMode } = useLotteryStore();
   const predictionListRef=useRef<HTMLDivElement>(null);
   useEffect(()=>{if(predictionListRef.current)predictionListRef.current.scrollTop=0;},[filters.predictionCount]);
-  const [scoreTrainingWindow,setScoreTrainingWindow]=useState(50);
+  const scoreTrainingWindow=Math.min(100,Math.max(1,filtered.length));
   const latest = filtered.at(-1);
   const [selectedDrawId,setSelectedDrawId]=useState<string|null>(null);
   const selectedDrawIndex=selectedDrawId===null?-1:filtered.findIndex(draw=>draw.id===selectedDrawId);
@@ -200,7 +200,6 @@ export default function Dashboard() {
       <label>{t("dashboard.analysisView")}<Select value={analysisView} onChange={e=>updateDashboardFilters({analysisView:e.target.value})}>{viewOptions.map(([value,key])=><option value={value} key={value}>{t(key)}</option>)}</Select></label>
       <label>{t("dashboard.scoringPreset")}<Select value={filters.scoringPreset} onChange={e=>updateDashboardFilters({scoringPreset:e.target.value})}>{presetOptions.map(([value,key])=><option value={value} key={value}>{t(key)}</option>)}</Select></label>
       <label>{t("dashboard.predictionCount")}<Select value={filters.predictionCount} onChange={e=>updateDashboardFilters({predictionCount:Number(e.target.value) as 5|10|20})}>{[5,10,20].map(x=><option value={x} key={x}>Top {x}</option>)}</Select></label>
-      <label>{t("dashboard.scoreTrainingWindow")}<Select value={scoreTrainingWindow} onChange={e=>setScoreTrainingWindow(Number(e.target.value))}>{[30,50,100].map(x=><option value={x} key={x}>{x}</option>)}</Select></label>
     </div>
 
     <section className="overview-grid">
