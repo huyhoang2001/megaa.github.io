@@ -33,6 +33,7 @@ export type AnalysisSettings = {
   allowedParity: string[];
   allowedInsideOutside: string[];
   singleWeights: { frequency: number; gap: number; trend: number; inside: number };
+  /** @deprecated V1 weights; retained for saved-settings compatibility. Scoring uses comboWeightsV2. */
   combinationWeights: { single: number; pair: number; triple: number; structure: number };
   maxCombinationOverlap: number;
   topCombinationCount: number;
@@ -70,6 +71,7 @@ export type SingleNumberStats = {
   inside: boolean;
   parity: "EVEN" | "ODD";
   state: NumberState;
+  pickScore: number;
   technicalScore: number;
   rank: number;
   weightedFrequency: number;
@@ -88,7 +90,7 @@ export type SingleNumberStats = {
 
 export type PairStats = { a: number; b: number; key: string; count: number; rate: number; lift: number; recentCount: number; recentLift: number; confidence: Confidence; insideCount: number; outsideCount: number; evenCount: number; oddCount: number; rank: number };
 export type TripleStats = { numbers: [number, number, number]; key: string; count: number; rate: number; lift: number; confidence: Confidence; insideCount: number; outsideCount: number; evenCount: number; oddCount: number; rank: number };
-export type CandidateCombination = { numbers: number[]; total: number; digitalRoot: number; evenCount: number; oddCount: number; insideCount: number; outsideCount: number; singleScore: number; pairScore: number; gapScore: number; tripleScore: number; structureScore: number; noveltyScore: number; maxHistoricalOverlap: number; totalScore: number; confidence: Confidence; dataSupport:Confidence; valid: boolean; rank?: number; candidateRank?:number; selectionReason?:"score"|"coverage"; selectionScore?:number };
+export type CandidateCombination = { numbers: number[]; total: number; digitalRoot: number; evenCount: number; oddCount: number; insideCount: number; outsideCount: number; singleScore: number; pairScore: number; gapScore: number; tripleScore: number; structureScore: number; noveltyScore: number; maxHistoricalOverlap: number; totalScore: number; confidence: Confidence; dataSupport:Confidence; valid: boolean; rank?: number; candidateRank?:number; selectionReason?:"score"|"coverage"|"relaxed-overlap"; selectionScore?:number };
 
 export const LOTTO535_INSIDE_NUMBERS=[2,3,4,5,6,7,8,9,10,11,13,14,15,16,18,21,22,23,24,26,29,34,35] as const;
 const COMMON_INSIDE_NUMBERS=[2,3,4,5,6,7,8,9,10,11,13,14,15,16,18,21,22,23,24,26,29,34,35,36,37,39,42,47,55];

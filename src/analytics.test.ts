@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { backtest, backtestRange, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculatePortfolioCoverage, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, calibrateProposalScore, digitalRoot, exactTopNumbers, filterCombinationsByNumbers, filterCombinationsByScores, filterCompleteCalendarMonths, filterDraws, generateCandidateUniverse, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, percentileRank, periodHalfLife, round2, runPortfolioRollingBacktest, runRollingBacktest, scoreCandidateCombinations, selectExperimentalPowerPortfolio, selectFilteredPortfolio, selectPortfolio, validCombinationScoreRanges, weightedAverage } from "./analytics";
+import { backtest, backtestRange, buildCandidateNumberPool, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculatePortfolioCoverage, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, calibrateProposalScore, digitalRoot, exactTopNumbers, filterCombinationsByNumbers, filterCombinationsByScores, filterCompleteCalendarMonths, filterDraws, generateCandidateUniverse, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, percentileRank, periodHalfLife, round2, runPortfolioRollingBacktest, runRollingBacktest, scoreCandidateCombinations, selectExperimentalPowerPortfolio, selectFilteredPortfolio, selectPortfolio, validCombinationScoreRanges, weightedAverage } from "./analytics";
 import type { CombinationScoreRanges } from "./analytics";
 import { DEFAULT_SETTINGS, INSIDE_SET, LOTTO535_INSIDE_NUMBERS } from "./domain";
-import type { Draw } from "./domain";
+import type { Draw, SingleNumberStats } from "./domain";
 import history from "./data/mega645-history.json";
 import powerHistory from "./data/power655-history.json";
 import lottoHistory from "./data/lotto535-history.json";
@@ -74,8 +74,22 @@ describe("analytics", () => {
     expect(chanceAdjustedSubsetScore(4,1000,2,45)).toBeGreaterThan(chanceAdjustedSubsetScore(3,1000,2,45));
     expect(chanceAdjustedSubsetScore(1,1000,3,45)).toBeLessThan(90);
     expect(chanceAdjustedSubsetScore(1,0,3,45)).toBe(50);
-    expect(chanceAdjustedSubsetScore(2,100,2,45)).toBe(50);
+    expect(chanceAdjustedSubsetScore(2,100,2,45)).toBeGreaterThan(50);
+    expect(chanceAdjustedSubsetScore(0,100,3,45)).toBeLessThan(50);
     expect(chanceAdjustedSubsetScore(3,21,2,15)).toBe(50);
+  });
+  it("keeps gap scoring neutral until four completed gaps support it",()=>{
+    const repeated=Array.from({length:4},(_,index)=>({...draws[0],id:`gap-${index}`}));
+    expect(calculateGapDistribution(repeated,1).completedGapCount).toBe(3);
+    expect(calculateGapDistribution(repeated,1).gapScore).toBe(50);
+  });
+  it("allocates an eligible candidate pool approximately 50/30/20 by number state",()=>{
+    const synthetic=Array.from({length:45},(_,index)=>({number:index+1,totalCount:index<15?14:13,state:index<23?"NEUTRAL":index<37?"HOT":"COOL",inside:index<23,pickScore:100-index,technicalScore:index}));
+    const pool=buildCandidateNumberPool(synthetic as unknown as SingleNumberStats[],{...DEFAULT_SETTINGS,candidatePoolSize:14},20);
+    const states=pool.map(number=>synthetic[number-1].state);
+    expect(states.filter(state=>state==="NEUTRAL")).toHaveLength(7);
+    expect(states.filter(state=>state==="HOT")).toHaveLength(4);
+    expect(states.filter(state=>state==="COOL")).toHaveLength(3);
   });
   it("calibrates proposal scores toward chance",()=>{
     expect(calibrateProposalScore(80)).toBe(74);
@@ -101,7 +115,7 @@ describe("analytics", () => {
   it("builds all five score timelines with a 20-period moving average",()=>{
     const timeline=calculateScoreTimeline((history.draws as Draw[]).slice(-75),DEFAULT_SETTINGS);
     expect(timeline).toHaveLength(25);
-    expect(timeline.every(point=>[point.single,point.pair,point.triple,point.structure,point.total,point.singleMa20,point.pairMa20,point.tripleMa20,point.structureMa20,point.totalMa20].every(Number.isFinite))).toBe(true);
+    expect(timeline.every(point=>[point.single,point.pair,point.triple,point.gap,point.structure,point.novelty,point.total,point.singleMa20,point.pairMa20,point.tripleMa20,point.structureMa20,point.totalMa20].every(Number.isFinite))).toBe(true);
     expect(timeline.at(-1)?.singleMa20).toBe(round2(timeline.slice(-20).reduce((sum,point)=>sum+point.single,0)/20));
   });
   it("uses 50 earlier draws and omits targets with insufficient history",()=>{
@@ -117,8 +131,9 @@ describe("analytics", () => {
     for(const window of [30,50,100]){
       const point=calculateScoreTimeline(source,DEFAULT_SETTINGS,45,[target.id],window)[0];
       const training=source.slice(-window-1,-1);
-      const [expected]=scoreCandidateCombinations([target.numbers],calculateSingles(training,DEFAULT_SETTINGS),calculatePairs(training),calculateTriples(training),DEFAULT_SETTINGS,training,[...INSIDE_SET],source.slice(0,-1));
+      const [expected]=scoreCandidateCombinations([target.numbers],calculateSingles(training,DEFAULT_SETTINGS),calculatePairs(training),calculateTriples(training),DEFAULT_SETTINGS,training,[...INSIDE_SET],training);
       expect(point.total).toBe(round2(expected.totalScore));
+      expect(point.structure).toBe(round2(expected.structureScore));
       expect(calculateScoreTimeline(source,DEFAULT_SETTINGS,45,[target.id],window)).toHaveLength(1);
     }
   });
@@ -148,18 +163,29 @@ describe("analytics", () => {
   it("builds a deterministic Power coverage portfolio without changing the first five",()=>{
     const training=(powerHistory.draws as Draw[]).slice(-51,-1);
     const singles=calculateSingles(training,DEFAULT_SETTINGS,55),pairs=calculatePairs(training,55),triples=calculateTriples(training,55);
+    const eligiblePool=buildCandidateNumberPool(singles,DEFAULT_SETTINGS,50,6);
     const universe=generateCandidateUniverse(singles,pairs,triples,DEFAULT_SETTINGS,training,[...INSIDE_SET],training,50);
     const standard=selectPortfolio(universe,DEFAULT_SETTINGS,50);
     const experimental=selectExperimentalPowerPortfolio(universe,singles,pairs,triples,DEFAULT_SETTINGS,training);
     expect(experimental.slice(0,5).map(item=>item.numbers)).toEqual(standard.slice(0,5).map(item=>item.numbers));
     expect(experimental).toHaveLength(50);
     expect(experimental.map(item=>item.numbers.join("-"))).toEqual(selectExperimentalPowerPortfolio(universe,singles,pairs,triples,DEFAULT_SETTINGS,training).map(item=>item.numbers.join("-")));
-    expect(experimental.every(item=>item.valid&&item.numbers.every(number=>number>=1&&number<=55))).toBe(true);
-    expect(experimental.slice(0,5).every(item=>item.selectionScore===undefined)).toBe(true);
-    expect(experimental.slice(5).every(item=>item.selectionReason==="coverage"&&item.selectionScore!==undefined&&Number.isFinite(item.selectionScore)&&item.selectionScore>=0&&item.selectionScore<=100)).toBe(true);
+    expect(experimental.every(item=>item.valid&&item.numbers.every(number=>number>=1&&number<=55)&&Number.isFinite(item.selectionScore)&&item.selectionScore!>=0&&item.selectionScore!<=100)).toBe(true);
+    expect(experimental.slice(0,5).every(item=>item.selectionReason==="score"&&item.selectionScore===round2(item.totalScore))).toBe(true);
+    expect(experimental.slice(5).every(item=>item.selectionReason==="coverage"||item.selectionReason==="relaxed-overlap")).toBe(true);
+    const numberCounts=Array(56).fill(0);
+    experimental.slice(0,5).forEach(item=>item.numbers.forEach(number=>numberCounts[number]++));
+    for(const item of experimental.slice(5)){
+      const newCount=item.numbers.filter(number=>numberCounts[number]===0).length;
+      const diversity=item.numbers.reduce((sum,number)=>sum+1/(1+numberCounts[number]),0)/6;
+      expect(item.selectionScore).toBe(round2(80*newCount/6+20*diversity));
+      if(newCount===0)expect(item.selectionScore).toBeLessThan(25);
+      item.numbers.forEach(number=>numberCounts[number]++);
+    }
+    expect(experimental.at(-1)?.selectionScore).toBeGreaterThan(0);
     const coverage=calculatePortfolioCoverage(experimental.slice(0,20),55);
-    expect(coverage.uniqueNumbers).toBe(55);
-    expect(coverage.uniqueNumbers).toBeGreaterThan(standard.slice(0,20).flatMap(item=>item.numbers).filter((number,index,all)=>all.indexOf(number)===index).length);
+    expect(coverage.uniqueNumbers).toBe(eligiblePool.length);
+    expect(experimental.every(item=>item.numbers.every(number=>eligiblePool.includes(number)))).toBe(true);
     expect(coverage.mostRepeatedTriple?.ticketCount).toBeGreaterThanOrEqual(1);
   },30000);
   it("uses the same pre-target Power portfolio in single and rolling backtests",()=>{
@@ -217,12 +243,12 @@ describe("analytics", () => {
     const [candidate]=scoreCandidateCombinations([[1,2,3,4,5,6]],singles,pairs,triples,DEFAULT_SETTINGS,source);
     const expectedSingle=source[0].numbers.reduce((sum,number)=>{
       const item=singles[number-1];
-      return sum+.55*chanceAdjustedSubsetScore(item.totalCount,source.length,1,45,6)+.45*item.models.consensus.normalizedScore;
+      return sum+.55*chanceAdjustedSubsetScore(item.totalCount,source.length,1,45,6)+.45*item.pickScore;
     },0)/6;
     expect(candidate.singleScore).toBeCloseTo(expectedSingle,2);
     expect(candidate.structureScore).toBe(100);
-    expect(candidate.pairScore).toBe(50);
-    expect(candidate.tripleScore).toBe(50);
+    expect(candidate.pairScore).toBeGreaterThan(50);
+    expect(candidate.tripleScore).toBeGreaterThan(50);
     expect(candidate.totalScore).toBeGreaterThanOrEqual(0);
     expect(candidate.totalScore).toBeLessThanOrEqual(100);
     expect(candidate.gapScore).toBeGreaterThanOrEqual(0);
@@ -230,12 +256,13 @@ describe("analytics", () => {
     expect(alteredTriples.tripleScore).not.toBe(candidate.tripleScore);
     expect(alteredTriples.totalScore).toBe(candidate.totalScore);
   });
-  it("enforces the tighter overlap ceilings for the first 5 and 10 picks",()=>{
+  it("prefers low overlap and only relaxes the configured cap when necessary",()=>{
     const source=history.draws as Draw[],settings=settingsForPreset(DEFAULT_SETTINGS,"Balanced"),singles=calculateSingles(source,settings),pairs=calculatePairs(source),triples=calculateTriples(source),universe=generateCandidateUniverse(singles,pairs,triples,settings,source),portfolio=selectPortfolio(universe,settings,10);
     expect(portfolio).toHaveLength(10);
     for(let i=0;i<portfolio.length;i++)for(let j=0;j<i;j++){
       const overlap=portfolio[i].numbers.filter(number=>portfolio[j].numbers.includes(number)).length;
-      expect(overlap).toBeLessThanOrEqual(i<5?2:3);
+      expect(overlap).toBeLessThanOrEqual(settings.maxCombinationOverlap+1);
+      if(overlap>settings.maxCombinationOverlap)expect(portfolio[i].selectionReason).toBe("relaxed-overlap");
     }
   },30000);
   it("keeps a viable structure-aware candidate pool with real history", () => { const real=history.draws as Draw[]; const singles=calculateSingles(real,DEFAULT_SETTINGS); const pairs=calculatePairs(real); const triples=calculateTriples(real); expect(generateCandidates(singles,pairs,triples,DEFAULT_SETTINGS).length).toBeGreaterThan(0); });

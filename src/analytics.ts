@@ -19,7 +19,6 @@ export function weightedAverage(values:number[],weights:number[]):number{
  */
 export function chanceAdjustedSubsetScore(observed:number,drawCount:number,subsetSize:1|2|3,maxNumber:number,drawSize=6):number{
   if(drawCount<=0||maxNumber<drawSize||subsetSize>drawSize)return 50;
-  if(subsetSize>1&&observed<3)return 50;
   let baseline=1;
   for(let i=0;i<subsetSize;i++)baseline*=(drawSize-i)/(maxNumber-i);
   const strength=18*Math.pow(subsetSize,1.5)*Math.sqrt(100/Math.max(drawCount,10));
@@ -187,7 +186,7 @@ export function calculateGapDistribution(draws:Draw[],number:number,minCompleted
   const gapZ=meanGap!==null&&stdGap!==null&&stdGap>0?zScore(currentGap,meanGap,stdGap):null;
   const gapCV=meanGap!==null&&meanGap>0&&stdGap!==null?stdGap/meanGap:null;
   const gapSupport=Math.min(1,gaps.length/8);
-  const gapScore=50+50*normalCdf(gapZ??0)*gapSupport;
+  const gapScore=gaps.length>=minCompletedGaps?50+50*normalCdf(gapZ??0)*gapSupport:50;
   return {gaps,currentGap,meanGap,medianGap:gaps.length?median(gaps):null,minGap:gaps.length?Math.min(...gaps):null,maxGap:gaps.length?Math.max(...gaps):null,maxCompletedGap:gaps.length?Math.max(...gaps):null,stdGap,q1:gaps.length?quantile(gaps,.25):null,q3:gaps.length?quantile(gaps,.75):null,gapPercentile,gapZ,gapCV,completedGapCount:gaps.length,gapSupport,gapCensored:appearances.length===0,gapScore:round2(gapScore)};
 }
 export function calculateTransitionMatrix(draws:Draw[],maxNumber=45){const counts=Array.from({length:maxNumber},()=>Array(maxNumber).fill(0));const eligible=Array(maxNumber).fill(0);for(let i=0;i<draws.length-1;i++)for(const a of draws[i].numbers){eligible[a-1]++;for(const b of draws[i+1].numbers)counts[a-1][b-1]++;}return {counts,eligible};}
@@ -250,7 +249,8 @@ export function calculateSingles(draws: Draw[], settings: AnalysisSettings,maxNu
   const consensusWeights=settings.consensusWeights??{frequency:25,momentum:25,gap:25,association:25};
   const componentTop10=(["frequencySignal","momentumSignal","gapSignal","associationSignal"] as const).map(key=>exactTopNumbers(scored.map(item=>({number:item.number,score:item[key].normalizedScore})),10));
   const singleWeights=settings.singleScoreWeights??{frequency:35,zScore:25,momentum:20,gap:20};
-  const withConsensus=scored.map((item,index)=>{const components=[item.frequencySignal,item.momentumSignal,item.gapSignal,item.associationSignal];const consensus=weightedAverage(components.map(component=>component.percentileRank),[consensusWeights.frequency,consensusWeights.momentum,consensusWeights.gap,consensusWeights.association]);const agreement=componentTop10.filter(top=>top.has(item.number)).length;const confidence:Confidence=agreement>=3&&totalDraws>=100&&item.associationSignal.confidence!=="LOW"?"HIGH":agreement>=2&&totalDraws>=50?"MEDIUM":"LOW";const technicalScore=weightedAverage([weightedScores[index],clamp(50+15*item.frequencyZ),item.momentumSignal.normalizedScore,item.gapSignal.normalizedScore],[singleWeights.frequency,singleWeights.zScore,singleWeights.momentum,singleWeights.gap]);return {...item,models:{frequency:item.frequencySignal,momentum:item.momentumSignal,gap:item.gapSignal,association:item.associationSignal,consensus:signal(consensus,consensus,[`${agreement}/4 component models place this number in the Top 10`],confidence)},modelAgreement:agreement,confidence,technicalScore:round2(technicalScore),rank:0};});
+  const stateScore:Record<NumberState,number>={NEUTRAL:100,HOT:70,COOL:40,DUE:0,DROUGHT:0};
+  const withConsensus=scored.map((item,index)=>{const components=[item.frequencySignal,item.momentumSignal,item.gapSignal,item.associationSignal];const consensus=weightedAverage(components.map(component=>component.percentileRank),[consensusWeights.frequency,consensusWeights.momentum,consensusWeights.gap,consensusWeights.association]);const agreement=componentTop10.filter(top=>top.has(item.number)).length;const confidence:Confidence=agreement>=3&&totalDraws>=100&&item.associationSignal.confidence!=="LOW"?"HIGH":agreement>=2&&totalDraws>=50?"MEDIUM":"LOW";const technicalScore=weightedAverage([weightedScores[index],clamp(50+15*item.frequencyZ),item.momentumSignal.normalizedScore,item.gapSignal.normalizedScore],[singleWeights.frequency,singleWeights.zScore,singleWeights.momentum,singleWeights.gap]);const pickScore=round2(.35*chanceAdjustedSubsetScore(item.totalCount,totalDraws,1,maxNumber,ordered[0]?.numbers.length??6)+.30*item.gap.gapScore+.35*stateScore[item.state]);return {...item,pickScore,models:{frequency:item.frequencySignal,momentum:item.momentumSignal,gap:item.gapSignal,association:item.associationSignal,consensus:signal(consensus,consensus,[`${agreement}/4 component models place this number in the Top 10`],confidence)},modelAgreement:agreement,confidence,technicalScore:round2(technicalScore),rank:0};});
   const ranked=[...withConsensus].sort((a,b)=>b.technicalScore-a.technicalScore||a.number-b.number);
   let consensusRank=0,previousConsensus:number|undefined;const consensusValues=ranked.map(item=>item.technicalScore);
   ranked.forEach(item=>{if(item.technicalScore!==previousConsensus){consensusRank++;previousConsensus=item.technicalScore;}item.rank=consensusRank;item.models.consensus.rank=consensusRank;item.models.consensus.percentileRank=round2(percentileRank(consensusValues,item.technicalScore)??50);});
@@ -303,7 +303,7 @@ export function scoreCandidateCombinations(numberSets:number[][],singles:SingleN
   const subsetScore=(observed:number,size:1|2|3)=>{const key=`${size}:${observed}`;if(!subsetCache.has(key))subsetCache.set(key,chanceAdjustedSubsetScore(observed,observedDraws,size,maxNumber,drawSize));return subsetCache.get(key)!;};
   const singleMap = new Map(singles.map(x => [x.number,{
     chance:subsetScore(x.totalCount,1),
-    consensus:x.models.consensus.normalizedScore,
+    pick:x.pickScore,
   }]));
   const pairMap = new Map(pairs.map(x => [x.key, x]));
   const tripleMap = new Map(triples.map(x => [x.key, x]));
@@ -329,7 +329,7 @@ export function scoreCandidateCombinations(numberSets:number[][],singles:SingleN
     }, 0) / candidateTriples.length;
     const singleScore = numbers.reduce((sum, n) => {
       const item=singleMap.get(n);
-      return sum+(item?.chance===undefined?50:.55*item.chance+.45*item.consensus);
+      return sum+(item?.chance===undefined?50:.55*item.chance+.45*item.pick);
     }, 0) / drawSize;
     const gapScore=numbers.reduce((sum,n)=>sum+(singles[n-1]?.gap.gapScore??50),0)/drawSize;
     const sumScore=structures.length?(structureStats.stdDev?100*Math.exp(-.5*((total-structureStats.mean)/structureStats.stdDev)**2):Number(total===structureStats.mean)*100):50;
@@ -358,8 +358,8 @@ export function calculateScoreTimeline(draws:Draw[],settings:AnalysisSettings,ma
     const singles=calculateSingles(history,settings,maxNumber,insideNumbers);
     const pairs=calculatePairs(history,maxNumber,insideNumbers);
     const triples=calculateTriples(history,maxNumber,insideNumbers);
-    const [score]=scoreCandidateCombinations([draw.numbers],singles,pairs,triples,settings,history,insideNumbers,ordered.slice(0,index));
-    return {id:draw.id,date:draw.date,single:round2(score.singleScore),pair:round2(score.pairScore),triple:round2(score.tripleScore),structure:round2(score.structureScore),total:round2(score.totalScore)};
+    const [score]=scoreCandidateCombinations([draw.numbers],singles,pairs,triples,settings,history,insideNumbers,history);
+    return {id:draw.id,date:draw.date,single:round2(score.singleScore),pair:round2(score.pairScore),triple:round2(score.tripleScore),gap:round2(score.gapScore),structure:round2(score.structureScore),novelty:round2(score.noveltyScore),total:round2(score.totalScore)};
   });
   const movingAverage=(key:"single"|"pair"|"triple"|"structure"|"total",index:number)=>{
     const window=points.slice(Math.max(0,index-19),index+1);
@@ -375,18 +375,37 @@ export function calculateScoreTimeline(draws:Draw[],settings:AnalysisSettings,ma
   }));
 }
 
+export function buildCandidateNumberPool(singles:SingleNumberStats[],settings:AnalysisSettings,requestedCount=settings.topCombinationCount,drawSize=singles.length===35?5:6){
+  const maxNumber=singles.length||45,totalDraws=singles.reduce((sum,item)=>sum+item.totalCount,0)/drawSize;
+  const minimumCount=totalDraws>=50?3:2;
+  const eligible=singles.filter(item=>["NEUTRAL","HOT","COOL"].includes(item.state)&&item.totalCount>=minimumCount&&totalDraws>0&&item.totalCount/totalDraws/(drawSize/maxNumber)>=.9);
+  const poolSize=Math.min(maxNumber,settings.candidatePoolSize);
+  const insideRatio=eligible.length?eligible.filter(item=>item.inside).length/eligible.length:.5;
+  const selected:SingleNumberStats[]=[];
+  const addGroup=(group:SingleNumberStats[],count:number)=>{
+    const remaining=group.filter(item=>!selected.includes(item));
+    const insideCount=Math.min(Math.round(count*insideRatio),remaining.filter(item=>item.inside).length);
+    const inside=remaining.filter(item=>item.inside).sort((a,b)=>b.pickScore-a.pickScore||a.number-b.number).slice(0,insideCount);
+    const outside=remaining.filter(item=>!item.inside).sort((a,b)=>b.pickScore-a.pickScore||a.number-b.number).slice(0,count-inside.length);
+    selected.push(...inside,...outside);
+    const missing=count-inside.length-outside.length;
+    if(missing)selected.push(...remaining.filter(item=>!selected.includes(item)).sort((a,b)=>b.pickScore-a.pickScore||a.number-b.number).slice(0,missing));
+  };
+  const states=["NEUTRAL","HOT","COOL"] as const;
+  const quotas=[Math.round(poolSize*.5),Math.round(poolSize*.3),poolSize-Math.round(poolSize*.5)-Math.round(poolSize*.3)];
+  states.forEach((state,index)=>addGroup(eligible.filter(item=>item.state===state).sort((a,b)=>b.pickScore-a.pickScore||a.number-b.number),quotas[index]));
+  for(const state of ["NEUTRAL","HOT","COOL"] as const){
+    if(selected.length>=poolSize)break;
+    const remaining=eligible.filter(item=>item.state===state&&!selected.includes(item)).sort((a,b)=>b.pickScore-a.pickScore||a.number-b.number);
+    selected.push(...remaining.slice(0,poolSize-selected.length));
+  }
+  return selected.map(item=>item.number).sort((a,b)=>a-b);
+}
+
 export function generateCandidateUniverse(singles: SingleNumberStats[], pairs: PairStats[], triples: TripleStats[], settings: AnalysisSettings, history:Draw[]=[],insideNumbers:readonly number[]= [...INSIDE_SET],structureHistory:Draw[]=history,requestedCount=settings.topCombinationCount): CandidateCombination[] {
-  const ranked = [...singles].sort((a, b) => b.technicalScore - a.technicalScore || a.number - b.number);
   const maxNumber=singles.length||45;
-  // The inside preference can otherwise fill the entire pool with inside numbers,
-  // making the required 4/2 or 3/3 structure mathematically impossible.
-  const insideAvailable=ranked.filter(item=>item.inside).length;
-  const poolSize=Math.min(maxNumber,Math.max(settings.candidatePoolSize,requestedCount>=5?15:settings.candidatePoolSize));
-  const pool = [
-    ...ranked.filter(x => x.inside).slice(0, Math.round(poolSize * insideAvailable / Math.max(1,ranked.length))),
-    ...ranked.filter(x => !x.inside).slice(0, poolSize-Math.round(poolSize * insideAvailable / Math.max(1,ranked.length))),
-  ].map(x => x.number).sort((a, b) => a - b);
-  const drawSize=history[0]?.numbers.length??6,insideSet=new Set(insideNumbers);
+  const drawSize=history[0]?.numbers.length??(maxNumber===35?5:6),insideSet=new Set(insideNumbers);
+  const pool=buildCandidateNumberPool(singles,settings,requestedCount,drawSize);
   const candidates=scoreCandidateCombinations(combinations(pool,drawSize),singles,pairs,triples,settings,history,insideNumbers,structureHistory).filter(x=>x.valid).sort((a,b)=>b.totalScore-a.totalScore);
   const rootsPresent=new Set(candidates.map(candidate=>candidate.digitalRoot));
   const missingRoots=settings.allowedDigitalRoots.filter(root=>!rootsPresent.has(root));
@@ -401,7 +420,7 @@ export function generateCandidateUniverse(singles: SingleNumberStats[], pairs: P
   if(targetCounts.size){
     for(const source of candidates.slice(0,60)){
       for(let index=0;index<source.numbers.length;index++) for(let number=1;number<=maxNumber;number++){
-        if(source.numbers.includes(number))continue;
+        if(source.numbers.includes(number)||!pool.includes(number))continue;
         const numbers=[...source.numbers];
         numbers[index]=number;
         const total=numbers.reduce((sum,value)=>sum+value,0);
@@ -428,7 +447,7 @@ export function generateCandidateUniverse(singles: SingleNumberStats[], pairs: P
   return [...candidates,...alternatives].sort((a,b)=>b.totalScore-a.totalScore||a.numbers.join("-").localeCompare(b.numbers.join("-"))).map((item,index)=>({...item,candidateRank:index+1}));
 }
 
-export function selectPortfolio(allCandidates:CandidateCombination[],settings:AnalysisSettings,count=Math.max(20,settings.topCombinationCount)):CandidateCombination[]{
+export function selectPortfolio(allCandidates:CandidateCombination[],settings:AnalysisSettings,count=Math.max(20,settings.topCombinationCount),allowRelaxedOverlap=true):CandidateCombination[]{
   const candidates=[...allCandidates].sort((a,b)=>b.totalScore-a.totalScore||a.numbers.join("-").localeCompare(b.numbers.join("-")));
   const selected:CandidateCombination[]=[];
   const nextLimit=()=>Math.min(settings.maxCombinationOverlap,selected.length<5?2:selected.length<10?3:settings.maxCombinationOverlap);
@@ -453,58 +472,67 @@ export function selectPortfolio(allCandidates:CandidateCombination[],settings:An
     if(!options.length)break;
     selected.push(pickByUtility(options));
   }
+  while(selected.length<count){
+    const options=candidates.filter(candidate=>!selected.includes(candidate)&&selected.every(existing=>candidate.numbers.filter(number=>existing.numbers.includes(number)).length<=settings.maxCombinationOverlap));
+    if(!options.length)break;
+    selected.push(pickByUtility(options));
+  }
+  if(allowRelaxedOverlap)while(selected.length<count){
+    const options=candidates.filter(candidate=>!selected.includes(candidate)&&selected.every(existing=>candidate.numbers.filter(number=>existing.numbers.includes(number)).length<=settings.maxCombinationOverlap+1));
+    if(!options.length)break;
+    selected.push({...pickByUtility(options),selectionReason:"relaxed-overlap"});
+  }
   return selected.map((item,index)=>({...item,rank:index+1}));
 }
 
-export function selectExperimentalPowerPortfolio(allCandidates:CandidateCombination[],singles:SingleNumberStats[],pairs:PairStats[],triples:TripleStats[],settings:AnalysisSettings,history:Draw[],count=50,structureHistory:Draw[]=history,insideNumbers:readonly number[]= [...INSIDE_SET]):CandidateCombination[]{
-  const firstFive=selectPortfolio(allCandidates,settings,50).slice(0,5).map(item=>({...item,selectionReason:"score" as const}));
+export function selectExperimentalPowerPortfolio(allCandidates:CandidateCombination[],singles:SingleNumberStats[],pairs:PairStats[],triples:TripleStats[],settings:AnalysisSettings,history:Draw[],count=50,structureHistory:Draw[]=history,insideNumbers:readonly number[]= [...INSIDE_SET],allowRelaxedOverlap=true):CandidateCombination[]{
+  const firstFive=selectPortfolio(allCandidates,settings,50,allowRelaxedOverlap).slice(0,5).map(item=>({...item,selectionReason:"score" as const,selectionScore:round2(clamp(item.totalScore))}));
   if(!firstFive.length)return [];
   const experimentalSettings={...settings,allowedInsideOutside:[...new Set([...settings.allowedInsideOutside,"2/4"])]};
-  let seed=2166136261;
-  for(const draw of history)for(const char of `${draw.id}:${draw.numbers.join("-")}`)seed=Math.imul(seed^char.charCodeAt(0),16777619)>>>0;
-  const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
   const key=(numbers:number[])=>numbers.join("-");
-  const seen=new Set(allCandidates.map(item=>key(item.numbers)));
-  const sampled:number[][]=[];
-  for(let attempt=0;attempt<30000&&sampled.length<1000;attempt++){
-    const numbers=new Set<number>();
-    while(numbers.size<6)numbers.add(1+Math.floor(random()*55));
-    const ticket=[...numbers].sort((a,b)=>a-b);
-    const total=ticket.reduce((sum,number)=>sum+number,0);
-    const even=ticket.filter(number=>number%2===0).length;
-    const inside=ticket.filter(number=>INSIDE_SET.has(number)).length;
-    if(total<settings.minTotal||!settings.allowedDigitalRoots.includes(digitalRoot(total))||!settings.allowedParity.includes(`${even}/${6-even}`)||!experimentalSettings.allowedInsideOutside.includes(`${inside}/${6-inside}`))continue;
-    const ticketKey=key(ticket);
-    if(seen.has(ticketKey))continue;
-    seen.add(ticketKey);
-    sampled.push(ticket);
-  }
-  const wide=scoreCandidateCombinations(sampled,singles,pairs,triples,experimentalSettings,history,insideNumbers,structureHistory).filter(item=>item.valid);
+  const maxNumber=singles.length||55,drawSize=history[0]?.numbers.length??6;
+  const pool=buildCandidateNumberPool(singles,settings,count,drawSize);
+  const wide=scoreCandidateCombinations(combinations(pool,drawSize),singles,pairs,triples,experimentalSettings,history,insideNumbers,structureHistory).filter(item=>item.valid&&item.insideCount===2);
   const candidates=[...allCandidates,...wide];
-  const newNumberWeight=100;
-  const maxRawUtility=6*(newNumberWeight+1);
   const selected:CandidateCombination[]=[...firstFive];
   const selectedKeys=new Set(selected.map(item=>key(item.numbers)));
-  const numberCounts=Array(56).fill(0);
-  const tripleCounts=new Map<string,number>();
-  const add=(ticket:CandidateCombination)=>{ticket.numbers.forEach(number=>numberCounts[number]++);combinations(ticket.numbers,3).forEach(triple=>{const tripleKey=key(triple);tripleCounts.set(tripleKey,(tripleCounts.get(tripleKey)??0)+1);});};
+  const numberCounts=Array(maxNumber+1).fill(0);
+  const add=(ticket:CandidateCombination)=>ticket.numbers.forEach(number=>numberCounts[number]++);
   selected.forEach(add);
-  while(selected.length<count){
+  if(allowRelaxedOverlap)while(selected.length<count){
     let best:CandidateCombination|undefined,bestScore=-Infinity;
     for(const candidate of candidates){
       if(selectedKeys.has(key(candidate.numbers))||selected.some(ticket=>candidate.numbers.filter(number=>ticket.numbers.includes(number)).length>settings.maxCombinationOverlap))continue;
-      const score=newNumberWeight*candidate.numbers.filter(number=>!numberCounts[number]).length+candidate.numbers.reduce((sum,number)=>sum+1/(1+numberCounts[number]),0)-combinations(candidate.numbers,3).reduce((sum,triple)=>sum+(tripleCounts.get(key(triple))??0),0);
+      const newCount=candidate.numbers.filter(number=>numberCounts[number]===0).length;
+      const diversity=candidate.numbers.reduce((sum,number)=>sum+1/(1+numberCounts[number]),0)/drawSize;
+      const score=80*(newCount/drawSize)+20*diversity;
       if(score>bestScore||score===bestScore&&best&&(candidate.totalScore>best.totalScore||candidate.totalScore===best.totalScore&&key(candidate.numbers)<key(best.numbers))){best=candidate;bestScore=score;}
     }
     if(!best)break;
-    const chosen={...best,rank:selected.length+1,selectionReason:"coverage" as const,selectionScore:round2(clamp(bestScore/maxRawUtility*100))};
+    const chosen={...best,rank:selected.length+1,selectionReason:"coverage" as const,selectionScore:round2(clamp(bestScore))};
+    selected.push(chosen);selectedKeys.add(key(chosen.numbers));add(chosen);
+  }
+  if(allowRelaxedOverlap)while(selected.length<count){
+    let best:CandidateCombination|undefined,bestScore=-Infinity;
+    for(const candidate of candidates){
+      if(selectedKeys.has(key(candidate.numbers))||selected.some(ticket=>candidate.numbers.filter(number=>ticket.numbers.includes(number)).length>settings.maxCombinationOverlap+1))continue;
+      const newCount=candidate.numbers.filter(number=>numberCounts[number]===0).length;
+      const diversity=candidate.numbers.reduce((sum,number)=>sum+1/(1+numberCounts[number]),0)/drawSize;
+      const score=80*(newCount/drawSize)+20*diversity;
+      if(score>bestScore||score===bestScore&&best&&(candidate.totalScore>best.totalScore||candidate.totalScore===best.totalScore&&key(candidate.numbers)<key(best.numbers))){best=candidate;bestScore=score;}
+    }
+    if(!best)break;
+    const chosen={...best,rank:selected.length+1,selectionReason:"relaxed-overlap" as const,selectionScore:round2(clamp(bestScore))};
     selected.push(chosen);selectedKeys.add(key(chosen.numbers));add(chosen);
   }
   return selected.map((item,index)=>({...item,rank:index+1}));
 }
 
 export function generateCandidates(singles: SingleNumberStats[], pairs: PairStats[], triples: TripleStats[], settings: AnalysisSettings, history:Draw[]=[],insideNumbers:readonly number[]= [...INSIDE_SET],structureHistory:Draw[]=history): CandidateCombination[] {
-  return selectPortfolio(generateCandidateUniverse(singles,pairs,triples,settings,history,insideNumbers,structureHistory,Math.max(20,settings.topCombinationCount)),settings);
+  const count=Math.max(20,settings.topCombinationCount),universe=generateCandidateUniverse(singles,pairs,triples,settings,history,insideNumbers,structureHistory,count);
+  let selected=selectPortfolio(universe,settings,count,false);
+  if(selected.length<count){const expanded=generateCandidateUniverse(singles,pairs,triples,{...settings,candidatePoolSize:Math.min(singles.length,settings.candidatePoolSize+4)},history,insideNumbers,structureHistory,count);selected=selectPortfolio([...universe,...expanded],settings,count,true);}
+  return selected;
 }
 
 export type FilteredCombination={proposal:CandidateCombination;filter:CandidateCombination;mainRank:number|null;filteredRank:number};
@@ -570,7 +598,13 @@ export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:Bac
     const singles=calculateSingles(history,settings,maxNumber,insideNumbers);
     const pairs=calculatePairs(history,maxNumber,insideNumbers);
     const triples=calculateTriples(history,maxNumber,insideNumbers);
-    const candidates=manualProposedSets?.length?scoreCandidateCombinations(manualProposedSets,singles,pairs,triples,settings,history,insideNumbers,structureHistory):options.powerSuggestionMode==="experimental"&&maxNumber===55?selectExperimentalPowerPortfolio(generateCandidateUniverse(singles,pairs,triples,settings,history,insideNumbers,structureHistory),singles,pairs,triples,settings,history,predictionCount,structureHistory,insideNumbers):generateCandidates(singles,pairs,triples,settings,history,insideNumbers,structureHistory).slice(0,predictionCount);
+    let candidates:CandidateCombination[];
+    if(manualProposedSets?.length)candidates=scoreCandidateCombinations(manualProposedSets,singles,pairs,triples,settings,history,insideNumbers,structureHistory);
+    else if(options.powerSuggestionMode==="experimental"&&maxNumber===55){
+      const universe=generateCandidateUniverse(singles,pairs,triples,settings,history,insideNumbers,structureHistory,predictionCount);
+      candidates=selectExperimentalPowerPortfolio(universe,singles,pairs,triples,settings,history,predictionCount,structureHistory,insideNumbers,false);
+      if(candidates.length<predictionCount){const expanded=generateCandidateUniverse(singles,pairs,triples,{...settings,candidatePoolSize:Math.min(maxNumber,settings.candidatePoolSize+4)},history,insideNumbers,structureHistory,predictionCount);candidates=selectExperimentalPowerPortfolio([...universe,...expanded],singles,pairs,triples,settings,history,predictionCount,structureHistory,insideNumbers,true);}
+    }else candidates=generateCandidates(singles,pairs,triples,settings,history,insideNumbers,structureHistory).slice(0,predictionCount);
     const predictions:BacktestPrediction[]=candidates.map(candidate=>{
       const key=candidate.numbers.map(pad).join("-");
       const count=history.filter(draw=>draw.numbers.map(pad).join("-")===key).length;
@@ -610,8 +644,10 @@ export function runPortfolioRollingBacktest(draws:Draw[],settings:AnalysisSettin
     const pairs=calculatePairs(training,options.maxNumber,insideNumbers);
     const triples=calculateTriples(training,options.maxNumber,insideNumbers);
     const structureHistory=ordered.slice(0,index);
-    const universe=generateCandidateUniverse(singles,pairs,triples,settings,training,insideNumbers,structureHistory);
-    const portfolio=(options.powerSuggestionMode==="experimental"&&options.maxNumber===55?selectExperimentalPowerPortfolio(universe,singles,pairs,triples,settings,training,options.predictionCount,structureHistory,insideNumbers):selectPortfolio(universe,settings,50)).slice(0,options.predictionCount);
+    const universe=generateCandidateUniverse(singles,pairs,triples,settings,training,insideNumbers,structureHistory,options.predictionCount);
+    let portfolio=options.powerSuggestionMode==="experimental"&&options.maxNumber===55?selectExperimentalPowerPortfolio(universe,singles,pairs,triples,settings,training,options.predictionCount,structureHistory,insideNumbers,false):selectPortfolio(universe,settings,options.predictionCount,false);
+    if(portfolio.length<options.predictionCount){const expanded=generateCandidateUniverse(singles,pairs,triples,{...settings,candidatePoolSize:Math.min(options.maxNumber,settings.candidatePoolSize+4)},training,insideNumbers,structureHistory,options.predictionCount);const candidates=[...universe,...expanded];portfolio=options.powerSuggestionMode==="experimental"&&options.maxNumber===55?selectExperimentalPowerPortfolio(candidates,singles,pairs,triples,settings,training,options.predictionCount,structureHistory,insideNumbers,true):selectPortfolio(candidates,settings,options.predictionCount,true);}
+    portfolio=portfolio.slice(0,options.predictionCount);
     const bestMatches=portfolio.reduce((best,ticket)=>Math.max(best,ticket.numbers.filter(number=>target.numbers.includes(number)).length),0);
     distribution[bestMatches]++;
     rows.push({targetId:target.id,date:target.date,bestMatches,ticketCount:portfolio.length});

@@ -45,7 +45,8 @@ const previousDefaultRoots=[[8,5,3,1],[1,2,3,4,5,6,7,8,9]];
 const selectablePeriods=new Set<DashboardFilters["period"]>(["last30","last50","last100","last1year","all"]);
 export const normalizeDashboardFilters=(filters?:Partial<DashboardFilters>):DashboardFilters=>{
   const merged={...DEFAULT_FILTERS,...filters};
-  return {...merged,period:selectablePeriods.has(merged.period)?merged.period:DEFAULT_FILTERS.period,scoringPreset:merged.scoringPreset==="Gap"?"Legacy Gap":merged.scoringPreset==="Triple"?"Default":merged.scoringPreset};
+  const scoringPreset=merged.scoringPreset==="Legacy Gap"?"Gap":merged.scoringPreset==="Gap + Frequency"?"Gap+Freq":merged.scoringPreset==="Triple"?"Default":merged.scoringPreset;
+  return {...merged,period:selectablePeriods.has(merged.period)?merged.period:DEFAULT_FILTERS.period,scoringPreset};
 };
 export const mergeBundledDraws=(stored:Draw[]|undefined,bundledDraws:Draw[]):Draw[]=>{
   if(!stored?.length)return bundledDraws;
@@ -80,7 +81,7 @@ export const validSettings=(settings:AnalysisSettings,maxNumber=55,drawSize=6)=>
   const weights=(values:Record<string,number>)=>Object.values(values).every(value=>Number.isFinite(value)&&value>=0)&&Object.values(values).some(value=>value>0);
   return integer(settings.candidatePoolSize,drawSize,Math.min(18,maxNumber))&&integer(settings.minTotal,0,drawSize*maxNumber-drawSize*(drawSize-1)/2)&&integer(settings.maxCombinationOverlap,0,drawSize-1)&&Number.isFinite(settings.weightedFrequencyHalfLife)&&settings.weightedFrequencyHalfLife>0&&integer(settings.minPairSupport,1,10000)&&integer(settings.minCompletedGaps??4,1,10000)&&weights(settings.consensusWeights)&&weights(settings.singleScoreWeights)&&weights(settings.comboWeightsV2);
 };
-const normalizeFilterConfig=(config?:Partial<IndependentFilterConfig>):IndependentFilterConfig=>({...DEFAULT_INDEPENDENT_FILTER,...config,ranges:{...DEFAULT_INDEPENDENT_FILTER.ranges,...config?.ranges},preset:config?.preset==="Gap"?"Legacy Gap":config?.preset==="Triple"?"Default":config?.preset??DEFAULT_INDEPENDENT_FILTER.preset});
+const normalizeFilterConfig=(config?:Partial<IndependentFilterConfig>):IndependentFilterConfig=>({...DEFAULT_INDEPENDENT_FILTER,...config,ranges:{...DEFAULT_INDEPENDENT_FILTER.ranges,...config?.ranges},preset:config?.preset==="Legacy Gap"||config?.preset==="Gap"?"Gap":config?.preset==="Gap + Frequency"?"Gap+Freq":config?.preset==="Triple"?"Default":config?.preset??DEFAULT_INDEPENDENT_FILTER.preset});
 export const validDraws=(draws:Draw[],game:LotteryGame|number)=>{
   const config=typeof game==="number"?LOTTERY_GAMES[game===55?"power655":"mega645"]:LOTTERY_GAMES[game];
   const {maxNumber,drawSize,specialMax}=config;
@@ -114,7 +115,7 @@ export const useLotteryStore = create<State>()(persist((set) => ({
   resetSettings: () => set(s=>{const settings=s.selectedGame==="lotto535"?defaultLottoSettings:defaultSettings;return {settings,gameSettings:{...s.gameSettings,[s.selectedGame]:settings}};}),
   updateSettings: settings => set(s => {const next={...s.settings,...settings},config=LOTTERY_GAMES[s.selectedGame];return validSettings(next,config.maxNumber,config.drawSize)?{settings:next,gameSettings:{...s.gameSettings,[s.selectedGame]:next}}:{};}),
   updateDashboardFilters: filters => set(s => ({ dashboardFilters: { ...s.dashboardFilters, ...filters },gamePeriods:filters.period?{...s.gamePeriods,[s.selectedGame]:filters.period}:s.gamePeriods })),
-  updateIndependentFilterConfig: config => set(s => {const independentFilterConfig={...s.independentFilterConfig,...config};return {independentFilterConfig,gameFilterConfigs:{...s.gameFilterConfigs,[s.selectedGame]:independentFilterConfig}};}),
+  updateIndependentFilterConfig: config => set(s => {const independentFilterConfig=normalizeFilterConfig({...s.independentFilterConfig,...config});return {independentFilterConfig,gameFilterConfigs:{...s.gameFilterConfigs,[s.selectedGame]:independentFilterConfig}};}),
   setThemeMode: themeMode => set({ themeMode }),
   setLanguageMode: languageMode => set({ languageMode }),
   setSelectedGame: selectedGame => set(s=>({selectedGame,settings:s.gameSettings[selectedGame],independentFilterConfig:s.gameFilterConfigs[selectedGame],dashboardFilters:{...s.dashboardFilters,period:s.gamePeriods[selectedGame]}})),

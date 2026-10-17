@@ -6,14 +6,16 @@ import type { Draw } from "./domain";
 import { settingsForPreset, useAnalytics } from "./hooks";
 import { useLotteryStore } from "./store";
 
-it("preserves the former Gap preset as Legacy Gap",()=>{
+it("maps old scoring preset names to the new Gap presets",()=>{
   expect(settingsForPreset(DEFAULT_SETTINGS,"Legacy Gap")).toMatchObject({gapModelVersion:"legacy",consensusWeights:{frequency:10,momentum:10,gap:65,association:15}});
   expect(settingsForPreset(DEFAULT_SETTINGS,"Gap")).toEqual(settingsForPreset(DEFAULT_SETTINGS,"Legacy Gap"));
+  expect(settingsForPreset(DEFAULT_SETTINGS,"Gap + Frequency")).toEqual(settingsForPreset(DEFAULT_SETTINGS,"Gap+Freq"));
+  expect(settingsForPreset(DEFAULT_SETTINGS,"Gap+Freq")).toMatchObject({gapModelVersion:"v2",consensusWeights:{frequency:25,momentum:5,gap:65,association:5},comboWeightsV2:{single:32,pair:18,gap:35,structure:8,novelty:7}});
 });
 
 it("does not recalculate analytics for display-only selector changes",()=>{
   const previous=useLotteryStore.getState();
-  const draws:Draw[]=Array.from({length:12},(_,index)=>({id:String(index),date:`2026-01-${String(index+1).padStart(2,"0")}`,numbers:[1,2,3,4,5,7+index] as Draw["numbers"],jackpot:1}));
+  const draws:Draw[]=Array.from({length:100},(_,index)=>({id:String(index),date:new Date(Date.UTC(2026,0,index+1)).toISOString().slice(0,10),numbers:Array.from({length:6},(_,offset)=>((index*6+offset)%45)+1),jackpot:1}));
   useLotteryStore.setState({draws,selectedGame:"mega645",settings:DEFAULT_SETTINGS,dashboardFilters:{...DEFAULT_FILTERS,period:"all",predictionCount:5}});
   const container=document.createElement("div");
   document.body.append(container);
@@ -34,9 +36,10 @@ it("does not recalculate analytics for display-only selector changes",()=>{
     const beforePeriodChange=result!;
     act(()=>useLotteryStore.getState().updateDashboardFilters({period:"last10"}));
     expect(result!.filtered).toHaveLength(10);
-    expect(result!.singles.find(item=>item.number===1)?.totalCount).toBe(10);
-    expect(result!.pairs.find(item=>item.key==="01-02")?.count).toBe(10);
-    expect(result!.triples.find(item=>item.key==="01-02-03")?.count).toBe(10);
+    const lastTen=draws.slice(-10);
+    expect(result!.singles.find(item=>item.number===1)?.totalCount).toBe(lastTen.filter(draw=>draw.numbers.includes(1)).length);
+    expect(result!.pairs.find(item=>item.key==="01-02")?.count).toBe(lastTen.filter(draw=>draw.numbers.includes(1)&&draw.numbers.includes(2)).length);
+    expect(result!.triples.find(item=>item.key==="01-02-03")?.count).toBe(lastTen.filter(draw=>[1,2,3].every(number=>draw.numbers.includes(number))).length);
     expect(result!.predictions).not.toBe(beforePeriodChange.predictions);
     const megaPredictions=result!.predictions.map(item=>item.numbers.join("-"));
     act(()=>useLotteryStore.getState().setPowerSuggestionMode("experimental"));

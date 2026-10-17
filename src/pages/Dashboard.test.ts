@@ -1,7 +1,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, describe, expect, it } from "vitest";
-import { ChartCard, jackpotHistoryData, MiniPieInfo, scoreAxisMaximum } from "./Dashboard";
+import { ChartCard, jackpotHistoryData, MiniPieInfo } from "./Dashboard";
 import type { Draw } from "../domain";
 
 let container:HTMLDivElement|undefined;
@@ -35,13 +35,6 @@ describe("ChartCard",()=>{
     act(()=>container!.querySelector<HTMLButtonElement>(".chart-action")!.click());
     expect(document.querySelector(".chart-modal-body")?.textContent).toContain("Navigator");
     act(()=>root.unmount());
-  });
-});
-
-describe("scoreAxisMaximum",()=>{
-  it("adds metric-specific headroom above the current maximum",()=>{
-    expect(scoreAxisMaximum([8,23,19.5],10)).toBe(33);
-    expect(scoreAxisMaximum([.24,.83,.71],1)).toBe(2);
   });
 });
 

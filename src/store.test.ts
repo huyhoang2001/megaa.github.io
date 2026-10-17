@@ -8,7 +8,8 @@ describe("Power history persistence migration",()=>{
   it("uses only the five selectable periods for saved filters",()=>{
     expect(normalizeDashboardFilters({period:"last10"}).period).toBe("last1year");
     expect(normalizeDashboardFilters({period:"last50"}).period).toBe("last50");
-    expect(normalizeDashboardFilters({scoringPreset:"Gap"}).scoringPreset).toBe("Legacy Gap");
+    expect(normalizeDashboardFilters({scoringPreset:"Legacy Gap"}).scoringPreset).toBe("Gap");
+    expect(normalizeDashboardFilters({scoringPreset:"Gap + Frequency"}).scoringPreset).toBe("Gap+Freq");
   });
   it("upgrades the previous default digital roots",()=>{
     expect(mergeSettings({allowedDigitalRoots:[1,3,5,8]}).allowedDigitalRoots).toEqual([1,3,5,6,7,8,9]);
@@ -69,7 +70,7 @@ describe("Power history persistence migration",()=>{
       useLotteryStore.getState().updateIndependentFilterConfig({preset:"Hot"});
       useLotteryStore.getState().setSelectedGame("mega645");
       expect(useLotteryStore.getState().settings.minTotal).toBe(120);
-      expect(useLotteryStore.getState().independentFilterConfig.preset).toBe("Legacy Gap");
+      expect(useLotteryStore.getState().independentFilterConfig.preset).toBe("Gap");
       useLotteryStore.getState().resetSettings();
       useLotteryStore.getState().setSelectedGame("power655");
       expect(useLotteryStore.getState().settings.minTotal).toBe(300);
