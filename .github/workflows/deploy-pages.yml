@@ -5,7 +5,7 @@ on:
     branches: [main]
   workflow_dispatch:
   schedule:
-    - cron: "45 23 * * *"
+    - cron: "17 * * * *"
       timezone: "Asia/Ho_Chi_Minh"
 
 permissions:
@@ -36,18 +36,17 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Install dependencies
-        run: npm ci
-
       - name: Refresh lottery data
         if: github.event_name != 'push'
         run: npm run sync:data
 
       - name: Commit refreshed data
+        id: commit-refreshed-data
         if: github.event_name != 'push'
         shell: bash
         run: |
           if git diff --quiet -- src/data/mega645-history.json src/data/power655-history.json src/data/lotto535-history.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             echo "Lottery data is already current."
           else
             git config user.name "github-actions[bot]"
@@ -55,18 +54,27 @@ jobs:
             git add src/data/mega645-history.json src/data/power655-history.json src/data/lotto535-history.json
             git commit -m "chore(data): refresh Vietlott history"
             git push
+            echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Install dependencies
+        if: github.event_name == 'push' || steps.commit-refreshed-data.outputs.changed == 'true'
+        run: npm ci
+
       - name: Test
+        if: github.event_name == 'push' || steps.commit-refreshed-data.outputs.changed == 'true'
         run: npm test -- --run
 
       - name: Build
+        if: github.event_name == 'push' || steps.commit-refreshed-data.outputs.changed == 'true'
         run: npm run build
 
       - name: Configure Pages
+        if: github.event_name == 'push' || steps.commit-refreshed-data.outputs.changed == 'true'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
 
       - name: Remove previous Pages artifacts for this run
+        if: github.event_name == 'push' || steps.commit-refreshed-data.outputs.changed == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -88,10 +96,12 @@ jobs:
           done <<< "$artifact_ids"
 
       - name: Upload Pages artifact
+        if: github.event_name == 'push' || steps.commit-refreshed-data.outputs.changed == 'true'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: dist
 
       - name: Deploy to GitHub Pages
+        if: github.event_name == 'push' || steps.commit-refreshed-data.outputs.changed == 'true'
         id: deployment
         uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5

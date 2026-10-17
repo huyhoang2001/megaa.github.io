@@ -209,14 +209,14 @@ Score-history charts show target draws within the selected dashboard period. Eac
 Workflow: `.github/workflows/deploy-pages.yml`
 
 1. Deploys on every push to `main`
-2. Refreshes datasets daily at **21:30 Asia/Ho_Chi_Minh**
-3. Commits updated JSON via the GitHub Actions bot
-4. Runs the test suite and production build
-5. Publishes `dist/` to GitHub Pages
+2. Checks the Mega 6/45, Power 6/55, and Lotto 5/35 source datasets hourly
+3. Commits changed, validated JSON via the GitHub Actions bot
+4. Runs tests, builds, and deploys only when data changed (or after a code push)
+5. Skips rebuilding when the source data is unchanged
 
 **One-time setup:** Repository → Settings → Pages → Source = **GitHub Actions**.
 
-You can also trigger the workflow manually from the Actions tab.
+You can also trigger a refresh manually from the Actions tab. New source data is picked up on the next hourly check; GitHub Actions schedule delays are possible during platform load.
 
 ---
 
