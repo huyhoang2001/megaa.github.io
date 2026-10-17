@@ -90,6 +90,9 @@ export function SinglesPage() {
   const {t}=useI18n();
   const labels=useTableLabels();
   const { singles, filtered, effectiveSettings }=useAnalytics(undefined,true);
+  const [query,setQuery]=useState("");
+  const queryNumbers=[...new Set((query.match(/\d{1,2}/g)??[]).map(Number))];
+  const visibleSingles=singles.filter(item=>!query.trim()||queryNumbers.includes(item.number));
   const minCompletedGaps=effectiveSettings.minCompletedGaps??4;
   const columns=useMemo<ColumnDef<SingleNumberStats>[]>(()=>[
     {accessorKey:"rank",header:t("common.rank"),cell:info=>`#${info.getValue<number>()}`},
@@ -112,7 +115,7 @@ export function SinglesPage() {
     {id:"parity",accessorFn:row=>row.parity==="EVEN"?t("common.even"):t("common.odd"),header:t("pages.eo")},
     {accessorKey:"state",header:t("pages.state"),cell:info=>{const state=info.getValue<SingleNumberStats["state"]>();return <span className={`state state-${state.toLowerCase()}`}>{t(`state.${state}` as TranslationKey)}</span>;}},
   ],[t,minCompletedGaps,effectiveSettings.gapModelVersion]);
-  return <><PageTitle title={t("pages.singlesTitle")} subtitle={t("pages.singlesSubtitle",{count:filtered.length})} actions={<><PeriodControl/><ScoringPresetControl/></>}/><DataTable data={singles} columns={columns} labels={labels} initialSorting={[{id:"rank",desc:false}]}/></>;
+  return <><PageTitle title={t("pages.singlesTitle")} subtitle={t("pages.singlesSubtitle",{count:filtered.length})} actions={<><PeriodControl/><ScoringPresetControl/></>}/><div className="combination-search single-number-search"><div className="combination-search-controls"><label><span>{t("pages.searchNumberLabel")}</span><div className="combination-search-field"><Search size={15} aria-hidden="true"/><input type="search" inputMode="numeric" value={query} onChange={event=>setQuery(event.target.value)} placeholder={t("pages.searchNumber")} aria-describedby="single-number-search-count"/></div></label></div><span id="single-number-search-count" aria-live="polite">{t("pages.numberMatches",{count:visibleSingles.length,total:singles.length})}</span></div><DataTable data={visibleSingles} columns={columns} labels={labels} initialSorting={[{id:"rank",desc:false}]} onReset={()=>setQuery("")}/></>;
 }
 
 export function PairsPage(){
