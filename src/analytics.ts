@@ -142,24 +142,21 @@ export function filterCompleteCalendarMonths(draws:Draw[],monthCount?:number){
 
 export function calculateOccurrenceTimeline(draws: Draw[]) {
   const ordered = [...draws].sort((a, b) => a.date.localeCompare(b.date));
-  const points = ordered.map((draw, index) => {
-    const window = ordered.slice(Math.max(0, index - 20), index);
-    const historicalFrequency = draw.numbers.reduce(
-      (total, number) => total + window.filter(item => item.numbers.includes(number)).length,
-      0,
-    );
+  const maxNumber=ordered.reduce((max,draw)=>draw.numbers.reduce((value,number)=>Math.max(value,number),max),0);
+  const recentCounts=new Int32Array(maxNumber+1),points:{id:string;date:string;historicalFrequency:number}[]=[];
+  for(let index=0;index<ordered.length;index++){
+    const draw=ordered[index];
+    points.push({id:draw.id,date:draw.date,historicalFrequency:draw.numbers.reduce((sum,number)=>sum+recentCounts[number],0)});
+    for(const number of draw.numbers)recentCounts[number]++;
+    if(index>=20)for(const number of ordered[index-20].numbers)recentCounts[number]--;
+  }
 
-    return { id: draw.id, date: draw.date, historicalFrequency };
+  let movingSum=0;
+  return points.map((point,index)=>{
+    movingSum+=point.historicalFrequency;
+    if(index>=20)movingSum-=points[index-20].historicalFrequency;
+    return {...point,ma20:round2(movingSum/Math.min(20,index+1))};
   });
-
-  return points.map((point, index) => ({
-    ...point,
-    ma20: round2(
-      points
-        .slice(Math.max(0, index - 19), index + 1)
-        .reduce((sum, item) => sum + item.historicalFrequency, 0) / Math.min(20, index + 1),
-    ),
-  }));
 }
 
 export function calculateMonthlyDraws(draws: Draw[]) {

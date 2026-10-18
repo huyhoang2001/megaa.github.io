@@ -139,6 +139,12 @@ describe("analytics", () => {
     expect(timeline.every(x=>Number.isFinite(x.ma20))).toBe(true);
     expect(timeline.at(-1)?.ma20).toBe(round2(timeline.slice(-20).reduce((sum,item)=>sum+item.historicalFrequency,0)/20));
   });
+  it("preserves the 20-previous-draw window in the optimized occurrence timeline",()=>{
+    const draws:Draw[]=Array.from({length:27},(_,index)=>({id:String(index),date:new Date(Date.UTC(2026,0,index+1)).toISOString().slice(0,10),numbers:[index%8+1,(index+3)%8+1],jackpot:0}));
+    const points=draws.map((draw,index)=>({id:draw.id,date:draw.date,historicalFrequency:draw.numbers.reduce((sum,number)=>sum+draws.slice(Math.max(0,index-20),index).filter(previous=>previous.numbers.includes(number)).length,0)}));
+    const expected=points.map((point,index)=>({...point,ma20:round2(points.slice(Math.max(0,index-19),index+1).reduce((sum,item)=>sum+item.historicalFrequency,0)/Math.min(20,index+1))}));
+    expect(calculateOccurrenceTimeline(draws)).toEqual(expected);
+  });
   it("builds all five score timelines with a 20-period moving average",()=>{
     const timeline=calculateScoreTimeline((history.draws as Draw[]).slice(-75),DEFAULT_SETTINGS);
     expect(timeline).toHaveLength(25);

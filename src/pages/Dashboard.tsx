@@ -88,6 +88,7 @@ function DistributionPie({ title, info, data,total }: { title: string; info:stri
 }
 
 type ScoreTimeline = ReturnType<typeof calculateScoreTimeline>;
+type OccurrenceTimeline = ReturnType<typeof calculateOccurrenceTimeline>;
 type ScoreValueKey = "single"|"pair"|"triple"|"structure"|"total";
 
 function TotalScoreTooltip({active,payload,label}:TooltipContentProps){
@@ -147,7 +148,17 @@ export default function Dashboard() {
   const insideTotal=gameConfig.insideNumbers.length;
   const insideNumbers=gameConfig.insideNumbers.map(pad).join(", ");
   const visibleDrawIds=new Set(filtered.map(draw=>draw.id));
-  const timeline = calculateOccurrenceTimeline(draws).filter(point=>visibleDrawIds.has(point.id));
+  const [occurrenceTimeline,setOccurrenceTimeline]=useState<OccurrenceTimeline>([]);
+  const occurrenceTimelineJob=useRef(0);
+  useEffect(()=>{
+    const job=++occurrenceTimelineJob.current;
+    const worker=new Worker(new URL("../timeline.worker.ts",import.meta.url),{type:"module"});
+    worker.onmessage=({data}:MessageEvent<OccurrenceTimeline>)=>{if(job===occurrenceTimelineJob.current)setOccurrenceTimeline(data);worker.terminate();};
+    worker.onerror=()=>{if(job===occurrenceTimelineJob.current)setOccurrenceTimeline([]);worker.terminate();};
+    worker.postMessage(draws);
+    return()=>{occurrenceTimelineJob.current++;worker.terminate();};
+  },[draws]);
+  const timeline=occurrenceTimeline.filter(point=>visibleDrawIds.has(point.id));
   const [scoreTimeline,setScoreTimeline]=useState<ScoreTimeline>([]);
   const [scoreTimelineLoading,setScoreTimelineLoading]=useState(true);
   const scoreTimelineJob=useRef(0);
