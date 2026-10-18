@@ -7,7 +7,7 @@ import history from "./data/mega645-history.json";
 import powerHistory from "./data/power655-history.json";
 import lottoHistory from "./data/lotto535-history.json";
 import { settingsForPreset } from "./hooks";
-import { format, parseISO, startOfMonth, subMonths } from "date-fns";
+import { addDays, format, parseISO, startOfMonth, subMonths } from "date-fns";
 
 const draws: Draw[] = [
   { id:"1", date:"2026-01-01", numbers:[1,2,3,4,5,6], jackpot:1 },
@@ -109,7 +109,7 @@ describe("analytics", () => {
     const candidates=generateCandidateUniverse(singles,pairs,triples,settings,training,undefined,training,20,cooldown);
     expect(candidates.length).toBeGreaterThan(0);
     expect(candidates.every(candidate=>candidate.numbers.every(number=>!cooldown.numbers.has(number)))).toBe(true);
-    const nextDraw:Draw={...latest,id:"next",date:"2026-10-17",numbers:Array.from({length:45},(_,index)=>index+1).filter(number=>!latest.numbers.includes(number)).slice(0,6)};
+    const nextDraw:Draw={...latest,id:"next",date:format(addDays(parseISO(latest.date),1),"yyyy-MM-dd"),numbers:Array.from({length:45},(_,index)=>index+1).filter(number=>!latest.numbers.includes(number)).slice(0,6)};
     expect(buildRecentDrawCooldownSet([latest,nextDraw],{enabled:true,draws:1,mode:"hard",includeBonus:false,softPenalty:25}).has(latest.numbers[0])).toBe(false);
   });
   it("soft cooldown preserves candidate eligibility while lowering its single score",()=>{
