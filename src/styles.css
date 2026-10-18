@@ -173,14 +173,13 @@ tbody tr:last-child>td{border-bottom:0}
 [data-theme="dark"] .game-switch button:hover{background:#223743;color:#e8f0f5}
 [data-theme="dark"] .game-switch button.active{background:#e7f0f3;color:#122832}
 @media(max-width:640px){.game-switch{width:100%}.game-switch button{flex:1;padding-inline:8px}}
-.topbar>div.topbar-controls:first-of-type{position:absolute;left:50%;transform:translateX(-50%);display:flex;flex-direction:row;align-items:center;gap:8px;white-space:nowrap}
-.topbar-controls .language-control,.topbar-controls .theme-control{margin:0}
+.topbar>div.topbar-controls:first-of-type{position:static;display:flex;flex-direction:row;align-items:center;gap:8px;margin:0 auto;white-space:nowrap}
+.topbar-controls .language-control,.topbar-controls .theme-control{margin:0;flex-shrink:0}
 .topbar-controls .game-switch{width:auto}
 .topbar-controls .game-switch button{flex:none}
-.topbar>.data-chip{margin-left:auto}
+.topbar>.data-chip{position:absolute;right:22px;top:50%;transform:translateY(-50%);margin:0}
 @media(min-width:1281px){.backtest-controls{grid-template-columns:minmax(340px,1.6fr) repeat(3,minmax(140px,.8fr))}}
 @media(min-width:761px) and (max-width:1280px){.backtest-dates{grid-column:1/-1}}
-@media(max-width:600px){.topbar{height:106px}.topbar>div.topbar-controls:first-of-type{display:grid;grid-template-columns:auto auto;justify-content:center;gap:4px 8px;width:calc(100% - 72px)}.topbar-controls .game-switch{grid-column:1/-1;justify-self:center}}
 .jackpot>div{display:flex;flex-direction:column}.power-jackpots{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding-inline:14px}.power-jackpots>div+div{border-left:1px solid var(--line)}.power-jackpots b{font-size:13px}.draw-form{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
 @media(max-width:640px){.power-jackpots{grid-template-columns:1fr;gap:5px}.power-jackpots>div+div{border-left:0}}
 
@@ -268,3 +267,20 @@ tbody tr:last-child>td{border-bottom:0}
 .page-title:has(.page-period-control){flex-wrap:wrap;gap:10px}
 .page-title:has(.page-period-control) .page-actions{max-width:100%;margin-left:auto}
 @media(max-width:640px){.page-title:has(.page-period-control) .page-actions{margin-left:0}}
+
+@media(max-width:850px){
+  .topbar{height:62px;min-height:62px;align-items:center;flex-wrap:nowrap;gap:6px;padding:8px 12px}
+  .topbar .menu-button{position:static;flex:0 0 32px;width:32px;height:36px;margin:0;align-items:center;justify-content:center}
+  .topbar>div.topbar-controls:first-of-type{position:static;left:auto;transform:none;order:0;flex:1 1 auto;width:auto;min-width:0;margin:0;justify-content:flex-start;flex-wrap:nowrap;gap:5px;overflow-x:auto;scrollbar-width:none}
+  .topbar>div.topbar-controls:first-of-type::-webkit-scrollbar{display:none}
+  .topbar-controls .game-switch{flex:0 0 auto;width:auto;justify-content:center;margin:0}
+  .topbar>.data-chip{display:none}
+}
+
+/* Keep dashboard charts consistent while letting the final row expand into unused tracks. */
+.dashboard .score-history-grid,.chart-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:13px;align-items:stretch}
+.dashboard .score-history-grid>.card,.chart-grid>.card,.chart-card{display:flex;flex-direction:column;min-height:300px;height:100%}
+.chart-body{flex:1 1 auto;height:240px!important;min-height:240px;padding:10px 8px 7px}
+@media(max-width:1250px){.dashboard .score-history-grid,.chart-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))}}
+@media(max-width:640px){.dashboard .score-history-grid,.chart-grid{grid-template-columns:1fr}.chart-card{min-height:286px}.chart-body{height:230px!important;min-height:230px}}
+.jackpot-history-grid{margin-top:12px}
