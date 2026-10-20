@@ -299,6 +299,12 @@ export function buildRecentDrawCooldownSet(draws:Draw[],options:AnalysisSettings
   return new Set([...draws].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id)).slice(-count).flatMap(draw=>options.includeBonus&&draw.bonus!==undefined?[...draw.numbers,draw.bonus]:draw.numbers));
 }
 
+export function resolveCandidateCooldown(singles:SingleNumberStats[],settings:AnalysisSettings,history:Draw[],config:AnalysisSettings["recentDrawCooldown"]):CandidateCooldown{
+  const numbers=buildRecentDrawCooldownSet(history,config),base={numbers,mode:config.mode,softPenalty:config.softPenalty};
+  const fallback=config.enabled&&config.mode==="hard"&&buildCandidateNumberPool(singles,settings,settings.topCombinationCount,history[0]?.numbers.length??6,base).length<(history[0]?.numbers.length??6);
+  return {...base,mode:fallback?"soft":config.mode,fallback};
+}
+
 export function scoreCandidateCombinations(numberSets:number[][],singles:SingleNumberStats[],pairs:PairStats[],triples:TripleStats[],settings:AnalysisSettings,history:Draw[]=[],insideNumbers:readonly number[]= [...INSIDE_SET],structureHistory:Draw[]=history,cooldown?:CandidateCooldown):CandidateCombination[]{
   const maxNumber=singles.length||45;
   const drawSize=history[0]?.numbers.length??numberSets[0]?.length??6,insideSet=new Set(insideNumbers);
@@ -310,7 +316,6 @@ export function scoreCandidateCombinations(numberSets:number[][],singles:SingleN
     pick:clamp(x.pickScore-(cooldown?.mode==="soft"&&cooldown.numbers.has(x.number)?cooldown.softPenalty:0)),
   }]));
   const pairMap = new Map(pairs.map(x => [x.key, x]));
-  const tripleMap = new Map(triples.map(x => [x.key, x]));
   const w = settings.comboWeightsV2??{single:38,pair:28,gap:18,structure:10,novelty:6};
   const historySets=history.map(draw=>new Set(draw.numbers));
   const structures=structureHistory.map(draw=>calculateDrawStructure(draw,maxNumber,insideNumbers));
@@ -322,15 +327,11 @@ export function scoreCandidateCombinations(numberSets:number[][],singles:SingleN
     const root = digitalRoot(total);
     const evenCount = numbers.filter(n => n % 2 === 0).length;
     const insideCount = numbers.filter(n => insideSet.has(n)).length;
-    const candidatePairs=combinations(numbers,2),candidateTriples=combinations(numbers,3);
+    const candidatePairs=combinations(numbers,2);
     const pairScore = candidatePairs.reduce((sum, pair) => {
       const stat=pairMap.get([...pair].sort((a,b)=>a-b).map(pad).join("-"));
       return sum+subsetScore(stat?.count??0,2);
     }, 0) / candidatePairs.length;
-    const tripleScore = candidateTriples.reduce((sum, triple) => {
-      const stat=tripleMap.get([...triple].sort((a,b)=>a-b).map(pad).join("-"));
-      return sum+subsetScore(stat?.count??0,3);
-    }, 0) / candidateTriples.length;
     const singleScore = numbers.reduce((sum, n) => {
       const item=singleMap.get(n);
       return sum+(item?.chance===undefined?50:.55*item.chance+.45*item.pick);
@@ -348,7 +349,7 @@ export function scoreCandidateCombinations(numberSets:number[][],singles:SingleN
     const averagePairSupport=candidatePairs.reduce((sum,pair)=>sum+(pairMap.get([...pair].sort((a,b)=>a-b).map(pad).join("-"))?.count??0),0)/Math.max(1,candidatePairs.length);
     const dataSupport:Confidence=observedDraws>=80&&averagePairSupport>=4?"HIGH":observedDraws>=40?"MEDIUM":"LOW";
     const confidence:Confidence=dataSupport;
-    return { numbers, total, digitalRoot: root, evenCount, oddCount: drawSize-evenCount, insideCount, outsideCount: drawSize-insideCount, singleScore, pairScore, gapScore, tripleScore, structureScore, noveltyScore,maxHistoricalOverlap,totalScore,confidence,dataSupport,valid };
+    return { numbers, total, digitalRoot: root, evenCount, oddCount: drawSize-evenCount, insideCount, outsideCount: drawSize-insideCount, singleScore, pairScore, gapScore, structureScore, noveltyScore,maxHistoricalOverlap,totalScore,confidence,dataSupport,valid };
   });
 }
 
@@ -361,11 +362,10 @@ export function calculateScoreTimeline(draws:Draw[],settings:AnalysisSettings,ma
     const history=ordered.slice(index-trainingWindow,index);
     const singles=calculateSingles(history,settings,maxNumber,insideNumbers);
     const pairs=calculatePairs(history,maxNumber,insideNumbers);
-    const triples=calculateTriples(history,maxNumber,insideNumbers);
-    const [score]=scoreCandidateCombinations([draw.numbers],singles,pairs,triples,settings,history,insideNumbers,history);
-    return {id:draw.id,date:draw.date,single:round2(score.singleScore),pair:round2(score.pairScore),triple:round2(score.tripleScore),gap:round2(score.gapScore),structure:round2(score.structureScore),novelty:round2(score.noveltyScore),total:round2(score.totalScore)};
+    const [score]=scoreCandidateCombinations([draw.numbers],singles,pairs,[],settings,history,insideNumbers,history);
+    return {id:draw.id,date:draw.date,single:round2(score.singleScore),pair:round2(score.pairScore),gap:round2(score.gapScore),structure:round2(score.structureScore),novelty:round2(score.noveltyScore),total:round2(score.totalScore)};
   });
-  const movingAverage=(key:"single"|"pair"|"triple"|"structure"|"total",index:number)=>{
+  const movingAverage=(key:"single"|"pair"|"structure"|"total",index:number)=>{
     const window=points.slice(Math.max(0,index-19),index+1);
     return round2(mean(window.map(point=>point[key])));
   };
@@ -373,7 +373,6 @@ export function calculateScoreTimeline(draws:Draw[],settings:AnalysisSettings,ma
     ...point,
     singleMa20:movingAverage("single",index),
     pairMa20:movingAverage("pair",index),
-    tripleMa20:movingAverage("triple",index),
     structureMa20:movingAverage("structure",index),
     totalMa20:movingAverage("total",index),
   }));
@@ -541,6 +540,18 @@ export function generateCandidates(singles: SingleNumberStats[], pairs: PairStat
   return selected;
 }
 
+export function generateSuggestedPortfolio(singles:SingleNumberStats[],pairs:PairStats[],settings:AnalysisSettings,history:Draw[],insideNumbers:readonly number[],count:number,cooldown?:CandidateCooldown,powerMode:PowerSuggestionMode="standard",initialUniverse?:CandidateCombination[]){
+  const request=Math.max(count,settings.topCombinationCount)>=5?5:Math.max(count,settings.topCombinationCount);
+  const select=(universe:CandidateCombination[],relax=false)=>powerMode==="experimental"&&singles.length===55?selectExperimentalPowerPortfolio(universe,singles,pairs,[],settings,history,count,history,insideNumbers,relax,cooldown):selectPortfolio(universe,settings,count,relax);
+  const universe=initialUniverse??generateCandidateUniverse(singles,pairs,[],settings,history,insideNumbers,history,request,cooldown);
+  let result=select(universe);
+  if(result.length<count){
+    const expanded=generateCandidateUniverse(singles,pairs,[],{...settings,candidatePoolSize:Math.min(singles.length,settings.candidatePoolSize+4)},history,insideNumbers,history,request,cooldown);
+    result=select([...new Map([...universe,...expanded].map(item=>[item.numbers.join("-"),item])).values()],true);
+  }
+  return result;
+}
+
 export type FilteredCombination={proposal:CandidateCombination;filter:CandidateCombination;mainRank:number|null;filteredRank:number};
 export function selectFilteredPortfolio(universe:CandidateCombination[],filterScores:CandidateCombination[],main:CandidateCombination[],ranges:CombinationScoreRanges,settings:AnalysisSettings,count:number,sort:"proposal"|"filter"="proposal"){
   if(universe.length!==filterScores.length)throw new RangeError("Candidate and filter score counts differ");
@@ -570,16 +581,33 @@ export function backtest(draws: Draw[], settings: AnalysisSettings, count = 12,m
   let totalMatches = 0; let best = 0; let tests = 0;
   for (let i = Math.max(10, draws.length - count); i < draws.length; i++) {
     const history = draws.slice(0, i);
-    const predictions = generateCandidates(calculateSingles(history,settings,maxNumber,insideNumbers),calculatePairs(history,maxNumber,insideNumbers),calculateTriples(history,maxNumber,insideNumbers),settings,history,insideNumbers).slice(0,5);
+    const predictions = generateCandidates(calculateSingles(history,settings,maxNumber,insideNumbers),calculatePairs(history,maxNumber,insideNumbers),[],settings,history,insideNumbers).slice(0,5);
     const match = predictions.reduce((m, p) => Math.max(m, p.numbers.filter(n => draws[i].numbers.includes(n)).length), 0);
     distribution[match]++; totalMatches += match; best = Math.max(best, match); tests++;
   }
   return { distribution, average: tests ? totalMatches / tests : 0, best, tests };
 }
 
-export type BacktestRangeOptions={fromDate:string;toDate:string;trainingDraws:number;predictionCount:number;maxNumber?:number;insideNumbers?:readonly number[];manualProposedSets?:number[][];powerSuggestionMode?:PowerSuggestionMode};
+export type BacktestRangeOptions={fromDate:string;toDate:string;trainingDraws:number;predictionCount:number;maxNumber?:number;insideNumbers?:readonly number[];manualProposedSets?:number[][];powerSuggestionMode?:PowerSuggestionMode;cooldownEnabled?:boolean};
 export type BacktestPrediction=CandidateCombination&{count:number;rate:number;matches:number};
 export type BacktestResultRow={targetId:string;date:string;predictions:BacktestPrediction[];actual:number[];bestMatches:number};
+
+export function generateBacktestProposals(draws:Draw[],settings:AnalysisSettings,options:BacktestRangeOptions&{cooldown:AnalysisSettings["recentDrawCooldown"];cooldownSupported?:boolean}){
+  const ordered=[...draws].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
+  const range=ordered.filter(draw=>draw.date>=options.fromDate&&draw.date<=options.toDate);
+  const prior=range.filter(draw=>draw.date<options.toDate),excluded=prior.at(-1),training=prior.slice(0,-1).slice(-Math.max(1,options.trainingDraws));
+  const cooldownConfig={...options.cooldown,enabled:options.cooldown.enabled&&options.cooldownSupported!==false};
+  const cooldownHistory=prior.slice(-Math.max(0,cooldownConfig.draws));
+  const maxNumber=options.maxNumber??45,insideNumbers=options.insideNumbers??[...INSIDE_SET];
+  const singles=calculateSingles(training,settings,maxNumber,insideNumbers),pairs=calculatePairs(training,maxNumber,insideNumbers);
+  const resolvedCooldown=resolveCandidateCooldown(singles,settings,cooldownHistory,cooldownConfig);
+  const candidates=options.manualProposedSets?.length
+    ?scoreCandidateCombinations(options.manualProposedSets,singles,pairs,[],settings,training,insideNumbers,training)
+    :generateSuggestedPortfolio(singles,pairs,settings,training,insideNumbers,options.predictionCount,resolvedCooldown,options.powerSuggestionMode);
+  const target=range.filter(draw=>draw.date===options.toDate).at(-1),result=target??excluded;
+  const predictions=candidates.map(candidate=>({ ...candidate,count:training.filter(draw=>draw.numbers.join("-")===candidate.numbers.join("-")).length,rate:training.length?training.filter(draw=>draw.numbers.join("-")===candidate.numbers.join("-")).length/training.length:0,...(result?{matches:candidate.numbers.filter(number=>result.numbers.includes(number)).length}:{}) }));
+  return {targetDate:options.toDate,trainingWindow:options.trainingDraws,trainingDrawCount:training.length,excludedDrawDate:excluded?.date,cooldownReferenceDates:cooldownConfig.enabled?cooldownHistory.map(draw=>draw.date):[],cooldownFallback:!options.manualProposedSets?.length&&resolvedCooldown.fallback,predictions,actual:result?.numbers,actualDate:result?.date,bestMatches:result?Math.max(0,...predictions.map(item=>item.matches??0)):undefined};
+}
 
 export function getBacktestTrainingWindows(draws:Draw[],fromDate:string,toDate:string){
   const ordered=[...draws].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
@@ -600,17 +628,17 @@ export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:Bac
   const predictionCount=Math.max(1,options.predictionCount);
   const maxNumber=options.maxNumber??45;
   const insideNumbers=options.insideNumbers??[...INSIDE_SET];
-  const evaluate=(history:Draw[],actual:number[],targetId:string,date:string,manualProposedSets?:number[][],structureHistory:Draw[]=history)=>{
+  const evaluate=(history:Draw[],actual:number[],targetId:string,date:string,manualProposedSets?:number[][])=>{
     const singles=calculateSingles(history,settings,maxNumber,insideNumbers);
     const pairs=calculatePairs(history,maxNumber,insideNumbers);
-    const triples=calculateTriples(history,maxNumber,insideNumbers);
+    const cooldownSettings=options.cooldownEnabled===false?{...settings.recentDrawCooldown,enabled:false}:settings.recentDrawCooldown;
+    const cooldownNumbers=buildRecentDrawCooldownSet(history,cooldownSettings);
+    const cooldownBase={numbers:cooldownNumbers,mode:cooldownSettings.mode,softPenalty:cooldownSettings.softPenalty};
+    const fallback=cooldownSettings.enabled&&cooldownSettings.mode==="hard"&&buildCandidateNumberPool(singles,settings,settings.topCombinationCount,history[0]?.numbers.length??6,cooldownBase).length<(history[0]?.numbers.length??6);
+    const cooldown={...cooldownBase,mode:fallback?"soft" as const:cooldownSettings.mode};
     let candidates:CandidateCombination[];
-    if(manualProposedSets?.length)candidates=scoreCandidateCombinations(manualProposedSets,singles,pairs,triples,settings,history,insideNumbers,structureHistory);
-    else if(options.powerSuggestionMode==="experimental"&&maxNumber===55){
-      const universe=generateCandidateUniverse(singles,pairs,triples,settings,history,insideNumbers,structureHistory,predictionCount);
-      candidates=selectExperimentalPowerPortfolio(universe,singles,pairs,triples,settings,history,predictionCount,structureHistory,insideNumbers,false);
-      if(candidates.length<predictionCount){const expanded=generateCandidateUniverse(singles,pairs,triples,{...settings,candidatePoolSize:Math.min(maxNumber,settings.candidatePoolSize+4)},history,insideNumbers,structureHistory,predictionCount);candidates=selectExperimentalPowerPortfolio([...universe,...expanded],singles,pairs,triples,settings,history,predictionCount,structureHistory,insideNumbers,true);}
-    }else candidates=generateCandidates(singles,pairs,triples,settings,history,insideNumbers,structureHistory).slice(0,predictionCount);
+    if(manualProposedSets?.length)candidates=scoreCandidateCombinations(manualProposedSets,singles,pairs,[],settings,history,insideNumbers,history);
+    else candidates=generateSuggestedPortfolio(singles,pairs,settings,history,insideNumbers,predictionCount,cooldown,options.powerSuggestionMode);
     const predictions:BacktestPrediction[]=candidates.map(candidate=>{
       const key=candidate.numbers.map(pad).join("-");
       const count=history.filter(draw=>draw.numbers.map(pad).join("-")===key).length;
@@ -625,16 +653,15 @@ export function backtestRange(draws:Draw[],settings:AnalysisSettings,options:Bac
   const ordered=[...draws].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
   const range=ordered.filter(draw=>draw.date>=options.fromDate&&draw.date<=options.toDate);
   const manualProposedSets=options.manualProposedSets;
-  const targets=range.slice(-1);
-  targets.forEach(target=>{
+  range.forEach(target=>{
     const targetIndex=ordered.indexOf(target);
     const history=ordered.slice(Math.max(0,targetIndex-trainingDraws),targetIndex);
-    if(history.length===trainingDraws)evaluate(history,target.numbers,target.id,target.date,manualProposedSets,ordered.slice(0,targetIndex));
+    if(history.length===trainingDraws)evaluate(history,target.numbers,target.id,target.date,manualProposedSets);
   });
-  return {distribution,average:rows.length?totalMatches/rows.length:0,best,tests:rows.length,rows,skippedTrainingCount:targets.length-rows.length,trainingWindow:trainingDraws};
+  return {distribution,average:rows.length?totalMatches/rows.length:0,best,tests:rows.length,rows,skippedTrainingCount:range.length-rows.length,trainingWindow:trainingDraws};
 }
 
-export function runPortfolioRollingBacktest(draws:Draw[],settings:AnalysisSettings,options:{fromDate:string;toDate:string;predictionCount:5|10|20;maxNumber:number;insideNumbers?:readonly number[];trainingDraws?:number;powerSuggestionMode?:PowerSuggestionMode}){
+export function runPortfolioRollingBacktest(draws:Draw[],settings:AnalysisSettings,options:{fromDate:string;toDate:string;predictionCount:5|10|20;maxNumber:number;insideNumbers?:readonly number[];trainingDraws?:number;powerSuggestionMode?:PowerSuggestionMode;cooldownEnabled?:boolean}){
   const ordered=[...draws].sort((a,b)=>a.date.localeCompare(b.date)||a.id.localeCompare(b.id));
   const window=options.trainingDraws??50;
   const distribution=[0,0,0,0,0,0,0];
@@ -648,12 +675,11 @@ export function runPortfolioRollingBacktest(draws:Draw[],settings:AnalysisSettin
     const insideNumbers=options.insideNumbers??[...INSIDE_SET];
     const singles=calculateSingles(training,settings,options.maxNumber,insideNumbers);
     const pairs=calculatePairs(training,options.maxNumber,insideNumbers);
-    const triples=calculateTriples(training,options.maxNumber,insideNumbers);
-    const structureHistory=ordered.slice(0,index);
-    const universe=generateCandidateUniverse(singles,pairs,triples,settings,training,insideNumbers,structureHistory,options.predictionCount);
-    let portfolio=options.powerSuggestionMode==="experimental"&&options.maxNumber===55?selectExperimentalPowerPortfolio(universe,singles,pairs,triples,settings,training,options.predictionCount,structureHistory,insideNumbers,false):selectPortfolio(universe,settings,options.predictionCount,false);
-    if(portfolio.length<options.predictionCount){const expanded=generateCandidateUniverse(singles,pairs,triples,{...settings,candidatePoolSize:Math.min(options.maxNumber,settings.candidatePoolSize+4)},training,insideNumbers,structureHistory,options.predictionCount);const candidates=[...universe,...expanded];portfolio=options.powerSuggestionMode==="experimental"&&options.maxNumber===55?selectExperimentalPowerPortfolio(candidates,singles,pairs,triples,settings,training,options.predictionCount,structureHistory,insideNumbers,true):selectPortfolio(candidates,settings,options.predictionCount,true);}
-    portfolio=portfolio.slice(0,options.predictionCount);
+    const cooldownSettings=options.cooldownEnabled===false?{...settings.recentDrawCooldown,enabled:false}:settings.recentDrawCooldown;
+    const cooldownNumbers=buildRecentDrawCooldownSet(training,cooldownSettings),cooldownBase={numbers:cooldownNumbers,mode:cooldownSettings.mode,softPenalty:cooldownSettings.softPenalty};
+    const fallback=cooldownSettings.enabled&&cooldownSettings.mode==="hard"&&buildCandidateNumberPool(singles,settings,settings.topCombinationCount,training[0]?.numbers.length??6,cooldownBase).length<(training[0]?.numbers.length??6);
+    const cooldown={...cooldownBase,mode:fallback?"soft" as const:cooldownSettings.mode};
+    const portfolio=generateSuggestedPortfolio(singles,pairs,settings,training,insideNumbers,options.predictionCount,cooldown,options.powerSuggestionMode);
     const bestMatches=portfolio.reduce((best,ticket)=>Math.max(best,ticket.numbers.filter(number=>target.numbers.includes(number)).length),0);
     distribution[bestMatches]++;
     rows.push({targetId:target.id,date:target.date,bestMatches,ticketCount:portfolio.length});
@@ -669,13 +695,13 @@ export function runPortfolioRollingBacktest(draws:Draw[],settings:AnalysisSettin
 
 export function runRollingBacktest(draws:Draw[],settings:AnalysisSettings,targetCount=30,seed=645,maxNumber=45,insideNumbers:readonly number[]= [...INSIDE_SET]){
   const drawSize=draws[0]?.numbers.length??6;
-  const minimum=Math.max(1,Math.min(settings.backtestMinTrainingDraws??50,draws.length-1));
-  const start=Math.max(minimum,draws.length-targetCount);
+  const window=Math.max(1,settings.backtestMinTrainingDraws??50);
+  const start=Math.max(window,draws.length-targetCount);
   let randomState=seed>>>0;
   const random=()=>{randomState=(1664525*randomState+1013904223)>>>0;return randomState/4294967296;};
   const rows=[];
   for(let index=start;index<draws.length;index++){
-    const training=draws.slice(0,index),actual=draws[index].numbers;
+    const training=draws.slice(index-window,index),actual=draws[index].numbers;
     const ranked=[...calculateSingles(training,settings,maxNumber,insideNumbers)].sort((a,b)=>b.technicalScore-a.technicalScore||a.number-b.number);
     const shuffled=Array.from({length:maxNumber},(_,i)=>i+1);
     for(let j=shuffled.length-1;j>0;j--){const k=Math.floor(random()*(j+1));[shuffled[j],shuffled[k]]=[shuffled[k],shuffled[j]];}

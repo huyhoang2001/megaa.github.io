@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { backtest, backtestRange, buildCandidateNumberPool, buildRecentDrawCooldownSet, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculatePortfolioCoverage, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, calibrateProposalScore, digitalRoot, exactTopNumbers, filterCombinationsByNumbers, filterCombinationsByScores, filterCompleteCalendarMonths, filterDraws, generateCandidateUniverse, generateCandidates, getBacktestTrainingWindows, parseCompactCombinations, percentileRank, periodHalfLife, round2, runPortfolioRollingBacktest, runRollingBacktest, scoreCandidateCombinations, selectExperimentalPowerPortfolio, selectFilteredPortfolio, selectPortfolio, validCombinationScoreRanges, weightedAverage } from "./analytics";
+import { backtest, backtestRange, buildCandidateNumberPool, buildRecentDrawCooldownSet, calculateChiSquareUniformity, calculateExpectedFrequencyBand, calculateGapDistribution, calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePairs, calculatePortfolioCoverage, calculateRollingFrequency, calculateScoreTimeline, calculateSingles, calculateTriples, calculateWeightedFrequency, chanceAdjustedSubsetScore, calibrateProposalScore, digitalRoot, exactTopNumbers, filterCombinationsByNumbers, filterCombinationsByScores, filterCompleteCalendarMonths, filterDraws, generateBacktestProposals, generateCandidateUniverse, generateCandidates, generateSuggestedPortfolio, getBacktestTrainingWindows, parseCompactCombinations, percentileRank, periodHalfLife, round2, runPortfolioRollingBacktest, runRollingBacktest, scoreCandidateCombinations, selectExperimentalPowerPortfolio, selectFilteredPortfolio, selectPortfolio, validCombinationScoreRanges, weightedAverage } from "./analytics";
 import type { CombinationScoreRanges } from "./analytics";
 import { DEFAULT_SETTINGS, INSIDE_SET, LOTTO535_INSIDE_NUMBERS } from "./domain";
 import type { Draw, SingleNumberStats } from "./domain";
@@ -118,6 +118,12 @@ describe("analytics", () => {
     const cooled=scoreCandidateCombinations([numbers],singles,pairs,triples,DEFAULT_SETTINGS,training,undefined,training,{numbers:new Set([1]),mode:"soft",softPenalty:25})[0];
     expect(cooled.singleScore).toBeLessThan(baseline.singleScore);
   });
+  it("cooldown OFF is identical to bypassing cooldown, regardless of saved mode preferences",()=>{
+    const training=(history.draws as Draw[]).slice(-50),settings={...DEFAULT_SETTINGS,recentDrawCooldown:{enabled:false,draws:4,mode:"soft" as const,includeBonus:true,softPenalty:47}},singles=calculateSingles(training,settings),pairs=calculatePairs(training);
+    const bypass=generateSuggestedPortfolio(singles,pairs,settings,training,[...INSIDE_SET],5);
+    const disabled=generateSuggestedPortfolio(singles,pairs,settings,training,[...INSIDE_SET],5,{numbers:buildRecentDrawCooldownSet(training,settings.recentDrawCooldown),mode:settings.recentDrawCooldown.mode,softPenalty:settings.recentDrawCooldown.softPenalty});
+    expect(disabled).toEqual(bypass);
+  });
   it("calibrates proposal scores toward chance",()=>{
     expect(calibrateProposalScore(80)).toBe(74);
     expect(calibrateProposalScore(20)).toBe(26);
@@ -148,7 +154,7 @@ describe("analytics", () => {
   it("builds all five score timelines with a 20-period moving average",()=>{
     const timeline=calculateScoreTimeline((history.draws as Draw[]).slice(-75),DEFAULT_SETTINGS);
     expect(timeline).toHaveLength(25);
-    expect(timeline.every(point=>[point.single,point.pair,point.triple,point.gap,point.structure,point.novelty,point.total,point.singleMa20,point.pairMa20,point.tripleMa20,point.structureMa20,point.totalMa20].every(Number.isFinite))).toBe(true);
+    expect(timeline.every(point=>[point.single,point.pair,point.gap,point.structure,point.novelty,point.total,point.singleMa20,point.pairMa20,point.structureMa20,point.totalMa20].every(Number.isFinite))).toBe(true);
     expect(timeline.at(-1)?.singleMa20).toBe(round2(timeline.slice(-20).reduce((sum,point)=>sum+point.single,0)/20));
   });
   it("uses 50 earlier draws and omits targets with insufficient history",()=>{
@@ -281,13 +287,11 @@ describe("analytics", () => {
     expect(candidate.singleScore).toBeCloseTo(expectedSingle,2);
     expect(candidate.structureScore).toBe(100);
     expect(candidate.pairScore).toBeGreaterThan(50);
-    expect(candidate.tripleScore).toBeGreaterThan(50);
     expect(candidate.totalScore).toBeGreaterThanOrEqual(0);
     expect(candidate.totalScore).toBeLessThanOrEqual(100);
     expect(candidate.gapScore).toBeGreaterThanOrEqual(0);
     const alteredTriples=scoreCandidateCombinations([[1,2,3,4,5,6]],singles,pairs,triples.map(item=>({...item,count:item.count+20})),DEFAULT_SETTINGS,source)[0];
-    expect(alteredTriples.tripleScore).not.toBe(candidate.tripleScore);
-    expect(alteredTriples.totalScore).toBe(candidate.totalScore);
+    expect(alteredTriples).toEqual(candidate);
   });
   it("prefers low overlap and only relaxes the configured cap when necessary",()=>{
     const source=history.draws as Draw[],settings=settingsForPreset(DEFAULT_SETTINGS,"Balanced"),singles=calculateSingles(source,settings),pairs=calculatePairs(source),triples=calculateTriples(source),universe=generateCandidateUniverse(singles,pairs,triples,settings,source),portfolio=selectPortfolio(universe,settings,10);
@@ -316,33 +320,73 @@ describe("analytics", () => {
     expect(candidates).toHaveLength(50);
   });
   it("backtest isolates each target from future data", () => { const result=backtest(draws,DEFAULT_SETTINGS,2); expect(result.tests).toBe(2); expect(result.best).toBeLessThanOrEqual(6); });
-  it("builds one Top N list from the selected training range",()=>{
+  it("evaluates every eligible draw in the selected range",()=>{
     const result=backtestRange(draws,{...DEFAULT_SETTINGS,candidatePoolSize:10},{fromDate:"2026-01-01",toDate:"2026-03-19",trainingDraws:10,predictionCount:2});
-    expect(result.rows.map(row=>row.date)).toEqual(["2026-03-19"]);
+    expect(result.rows.map(row=>row.date)).toEqual(draws.filter(draw=>draw.date>="2026-01-01"&&draw.date<="2026-03-19").slice(10).map(draw=>draw.date));
     expect(result.rows.every(row=>row.predictions.length<=2&&row.actual.length===6)).toBe(true);
-    expect(result.rows.flatMap(row=>row.predictions).every(prediction=>Number.isFinite(prediction.tripleScore)&&prediction.insideCount+prediction.outsideCount===6&&prediction.evenCount+prediction.oddCount===6)).toBe(true);
+    expect(result.rows.flatMap(row=>row.predictions).every(prediction=>Number.isFinite(prediction.singleScore)&&Number.isFinite(prediction.pairScore)&&prediction.insideCount+prediction.outsideCount===6&&prediction.evenCount+prediction.oddCount===6)).toBe(true);
     expect(result.distribution.reduce((sum,count)=>sum+count,0)).toBe(result.tests);
+    expect(result.skippedTrainingCount).toBe(10);
   });
-  it("uses entered sets as proposals against the final selected draw",()=>{
+  it("matches the Suggested combinations portfolio for the same training slice and preset",()=>{
+    const target=draws[10],training=draws.slice(0,10),settings={...settingsForPreset(DEFAULT_SETTINGS,"Balanced"),recentDrawCooldown:{...DEFAULT_SETTINGS.recentDrawCooldown,enabled:false}};
+    const expected=generateSuggestedPortfolio(calculateSingles(training,settings),calculatePairs(training),settings,training,[...INSIDE_SET],2,{numbers:new Set(),mode:"hard",softPenalty:25});
+    const actual=backtestRange(draws,settings,{fromDate:target.date,toDate:target.date,trainingDraws:10,predictionCount:2,cooldownEnabled:false}).rows[0].predictions;
+    expect(actual.map(item=>[item.numbers,item.totalScore])).toEqual(expected.map(item=>[item.numbers,item.totalScore]));
+  });
+  it("bounds proposal training to the range, excludes T+0, and keeps it as the local cooldown reference",()=>{
+    const target=draws[11],settings={...DEFAULT_SETTINGS,candidatePoolSize:10},cooldown={...DEFAULT_SETTINGS.recentDrawCooldown,enabled:true,mode:"hard" as const,draws:1};
+    const result=generateBacktestProposals(draws,settings,{fromDate:draws[1].date,toDate:target.date,trainingDraws:30,predictionCount:2,cooldown});
+    expect(result.targetDate).toBe(target.date);
+    expect(result.trainingDrawCount).toBe(9);
+    expect(result.excludedDrawDate).toBe(draws[10].date);
+    expect(result.cooldownReferenceDates).toEqual([draws[10].date]);
+    expect(result.actual).toEqual(target.numbers);
+    const noTarget=generateBacktestProposals(draws.filter(draw=>draw!==target),settings,{fromDate:draws[1].date,toDate:target.date,trainingDraws:30,predictionCount:2,cooldown});
+    expect(noTarget.actual).toEqual(draws[10].numbers);
+    expect(noTarget.actualDate).toBe(draws[10].date);
+    expect(noTarget.predictions.map(item=>[item.numbers,item.totalScore])).toEqual(result.predictions.map(item=>[item.numbers,item.totalScore]));
+  });
+  it("keeps manual proposed sets unchanged when local cooldown is enabled",()=>{
+    const proposed=[1,2,3,4,7,45],target=draws[11];
+    const result=generateBacktestProposals(draws,DEFAULT_SETTINGS,{fromDate:draws[0].date,toDate:target.date,trainingDraws:10,predictionCount:2,manualProposedSets:[proposed],cooldown:{...DEFAULT_SETTINGS.recentDrawCooldown,enabled:true}});
+    expect(result.predictions.map(item=>item.numbers)).toEqual([proposed]);
+    expect(result.cooldownReferenceDates).toEqual([draws[10].date]);
+  });
+  it("uses at most each selected training window without reaching before From date",()=>{
+    const source=history.draws as Draw[],toDate=source.at(-1)!.date,fromDate=source[0].date;
+    for(const trainingDraws of [30,50,100]){
+      const result=generateBacktestProposals(source,DEFAULT_SETTINGS,{fromDate,toDate,trainingDraws,predictionCount:1,cooldown:{...DEFAULT_SETTINGS.recentDrawCooldown,enabled:false}});
+      expect(result.trainingDrawCount).toBe(trainingDraws);
+    }
+    const short=generateBacktestProposals(source,DEFAULT_SETTINGS,{fromDate:source.at(-5)!.date,toDate,trainingDraws:100,predictionCount:1,cooldown:{...DEFAULT_SETTINGS.recentDrawCooldown,enabled:false}});
+    expect(short.trainingDrawCount).toBe(3);
+  });
+  it("does not use older draws, target results, or future draws for a target prediction",()=>{
+    const target=draws[11],options={fromDate:target.date,toDate:target.date,trainingDraws:10,predictionCount:2,cooldownEnabled:false};
+    const future={...target,id:"future",date:"2026-03-26",numbers:[10,20,30,35,40,45]};
+    const baseline=backtestRange([...draws,future],DEFAULT_SETTINGS,options).rows[0].predictions.map(item=>[item.numbers,item.totalScore]);
+    const changed=[{...draws[0],numbers:[40,41,42,43,44,45]},...draws.slice(1,11),{...target,numbers:[10,20,30,35,40,45]},{...future,numbers:[1,2,3,4,5,6]}];
+    const next=backtestRange(changed,DEFAULT_SETTINGS,options).rows[0].predictions.map(item=>[item.numbers,item.totalScore]);
+    expect(next).toEqual(baseline);
+  });
+  it("uses entered sets unchanged against every eligible draw",()=>{
     const proposed=[1,2,3,4,7,45];
     const options={fromDate:"2026-01-01",toDate:"2026-03-19",trainingDraws:10,predictionCount:2};
     const result=backtestRange(draws,DEFAULT_SETTINGS,{...options,manualProposedSets:[proposed]});
-    expect(result.rows).toHaveLength(1);
-    expect(result.rows[0].date).toBe("2026-03-19");
-    expect(result.rows[0].actual).toEqual(draws.at(-1)?.numbers);
-    expect(result.rows[0].predictions).toHaveLength(1);
-    expect(result.rows[0].predictions[0].numbers).toEqual(proposed);
-    expect(result.rows[0].predictions[0].matches).toBe(proposed.filter(number=>draws.at(-1)?.numbers.includes(number)).length);
+    expect(result.rows).toHaveLength(2);
+    expect(result.rows.map(row=>row.predictions[0].numbers)).toEqual([proposed,proposed]);
+    expect(result.rows.every(row=>row.predictions[0].matches===proposed.filter(number=>row.actual.includes(number)).length)).toBe(true);
   });
-  it("runs each comma-separated entered set against the final selected draw",()=>{
+  it("runs each comma-separated entered set against every eligible selected draw",()=>{
     const manual=parseCompactCombinations("111721222630,021617263335,192122242835,111216192326",45);
     expect(manual.valid).toBe(true);
     const testDraws=[...draws,...Array.from({length:4},(_,index)=>({...draws[index],id:`extra-${index}`,date:`2026-04-${String(index*7+1).padStart(2,"0")}`}))];
     const result=backtestRange(testDraws,DEFAULT_SETTINGS,{fromDate:"2026-01-01",toDate:"2026-04-30",trainingDraws:10,predictionCount:2,manualProposedSets:manual.combinations});
-    expect(result.rows).toHaveLength(1);
-    expect(result.rows[0].date).toBe("2026-04-22");
-    expect(result.rows[0].actual).toEqual(testDraws.at(-1)?.numbers);
-    expect(result.rows[0].predictions.map(prediction=>prediction.numbers)).toEqual(manual.combinations);
+    expect(result.rows).toHaveLength(6);
+    expect(result.rows.at(-1)?.date).toBe("2026-04-22");
+    expect(result.rows.at(-1)?.actual).toEqual(testDraws.at(-1)?.numbers);
+    expect(result.rows.every(row=>row.predictions.map(prediction=>prediction.numbers).map(set=>set.join("-")).join("|")===manual.combinations.map(set=>set.join("-")).join("|"))).toBe(true);
   });
   it("enables the full training tier supported by the selected range",()=>{
     const repeated=(count:number)=>Array.from({length:count},(_,index)=>({...draws[0],id:String(index).padStart(3,"0"),date:"2026-01-01"}));

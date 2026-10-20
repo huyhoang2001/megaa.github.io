@@ -10,4 +10,11 @@ describe("translations", () => {
     expect(translations.en["nav.dashboard"]).toBe("Dashboard");
     expect(translations.vi["nav.dashboard"]).toBe("Tổng quan");
   });
+
+  it("localizes the cooldown switch and its explanation",()=>{
+    expect(translations.en["settings.cooldownToggle"]).toBe("Apply recent draw cooldown");
+    expect(translations.vi["settings.cooldownToggle"]).toBe("Bật cooldown kỳ quay gần đây");
+    expect(translations.en["settings.cooldownHelp"]).toContain("OFF disables cooldown filtering and penalties");
+    expect(translations.vi["settings.cooldownHelp"]).toContain("TẮT sẽ vô hiệu hóa lọc và trừ điểm cooldown");
+  });
 });

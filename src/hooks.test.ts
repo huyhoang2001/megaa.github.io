@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { expect, it } from "vitest";
 import { DEFAULT_FILTERS, DEFAULT_SETTINGS } from "./domain";
 import type { Draw } from "./domain";
+import { calculateTriples } from "./analytics";
 import { settingsForPreset, useAnalytics } from "./hooks";
 import { useLotteryStore } from "./store";
 
@@ -59,7 +60,7 @@ it("does not recalculate analytics for display-only selector changes",()=>{
     const lastTen=draws.slice(-10);
     expect(result!.singles.find(item=>item.number===1)?.totalCount).toBe(lastTen.filter(draw=>draw.numbers.includes(1)).length);
     expect(result!.pairs.find(item=>item.key==="01-02")?.count).toBe(lastTen.filter(draw=>draw.numbers.includes(1)&&draw.numbers.includes(2)).length);
-    expect(result!.triples.find(item=>item.key==="01-02-03")?.count).toBe(lastTen.filter(draw=>[1,2,3].every(number=>draw.numbers.includes(number))).length);
+    expect(calculateTriples(result!.filtered).find(item=>item.key==="01-02-03")?.count).toBe(lastTen.filter(draw=>[1,2,3].every(number=>draw.numbers.includes(number))).length);
     expect(result!.predictions).not.toBe(beforePeriodChange.predictions);
     const megaPredictions=result!.predictions.map(item=>item.numbers.join("-"));
     act(()=>useLotteryStore.getState().setPowerSuggestionMode("experimental"));

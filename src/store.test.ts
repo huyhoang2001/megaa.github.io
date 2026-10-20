@@ -1,7 +1,7 @@
 import { describe,expect,it } from "vitest";
 import powerHistory from "./data/power655-history.json";
 import lottoHistory from "./data/lotto535-history.json";
-import type { Draw } from "./domain";
+import type { AnalysisSettings, Draw } from "./domain";
 import { mergeBundledDraws, mergeBundledPowerDraws, mergeSettings, normalizeDashboardFilters, useLotteryStore, validDraws, validSettings } from "./store";
 
 describe("Power history persistence migration",()=>{
@@ -21,6 +21,9 @@ describe("Power history persistence migration",()=>{
   it("merges and validates recent-draw cooldown preferences",()=>{
     expect(mergeSettings().recentDrawCooldown).toEqual({enabled:true,draws:1,mode:"hard",includeBonus:false,softPenalty:25});
     expect(mergeSettings({recentDrawCooldown:{...mergeSettings().recentDrawCooldown,mode:"soft",includeBonus:true}}).recentDrawCooldown).toMatchObject({mode:"soft",includeBonus:true});
+    const preferences={enabled:false,draws:4,mode:"soft" as const,includeBonus:true,softPenalty:40};
+    expect(mergeSettings({recentDrawCooldown:preferences}).recentDrawCooldown).toEqual(preferences);
+    expect(mergeSettings({recentDrawCooldown:{mode:"soft",draws:3}} as Partial<AnalysisSettings>).recentDrawCooldown.enabled).toBe(true);
     expect(validSettings({...mergeSettings(),recentDrawCooldown:{...mergeSettings().recentDrawCooldown,draws:0}})).toBe(false);
     expect(validSettings({...mergeSettings(),recentDrawCooldown:{...mergeSettings().recentDrawCooldown,softPenalty:51}})).toBe(false);
   });

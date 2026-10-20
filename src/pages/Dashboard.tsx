@@ -1,11 +1,11 @@
 import { format, parseISO } from "date-fns";
 import { enUS, vi } from "date-fns/locale";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Bar, BarChart, Brush, CartesianGrid, Cell, LabelList, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis, ZAxis } from "recharts";
 import type { TooltipContentProps } from "recharts";
 import { ChevronLeft, ChevronRight, Info, Maximize2, X } from "lucide-react";
-import { calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePortfolioCoverage, calculateScoreTimeline, digitalRoot, exactTopNumbers, filterCompleteCalendarMonths, pad, round2 } from "../analytics";
+import { calculateMonthlyDraws, calculateOccurrenceTimeline, calculatePortfolioCoverage, calculateScoreTimeline, calculateTriples, digitalRoot, exactTopNumbers, filterCompleteCalendarMonths, pad, round2 } from "../analytics";
 import type { Draw } from "../domain";
 import { useAnalytics } from "../hooks";
 import { useLotteryStore } from "../store";
@@ -89,7 +89,7 @@ function DistributionPie({ title, info, data,total }: { title: string; info:stri
 
 type ScoreTimeline = ReturnType<typeof calculateScoreTimeline>;
 type OccurrenceTimeline = ReturnType<typeof calculateOccurrenceTimeline>;
-type ScoreValueKey = "single"|"pair"|"triple"|"structure"|"total";
+type ScoreValueKey = "single"|"pair"|"structure"|"total";
 
 function TotalScoreTooltip({active,payload,label}:TooltipContentProps){
   const {language,t}=useI18n();
@@ -97,7 +97,7 @@ function TotalScoreTooltip({active,payload,label}:TooltipContentProps){
   const point=payload[0]?.payload as ScoreTimeline[number]|undefined;
   if(!point)return null;
   const locale=language==="vi"?vi:enUS;
-  return <div className="chart-tooltip"><b>{format(parseISO(String(label)),"dd/MM/yyyy",{locale})}</b><span>{t("dashboard.totalScoreHistory")}<strong>{point.total.toFixed(2)}</strong></span><span>MA20<strong>{point.totalMa20.toFixed(2)}</strong></span><hr/><span>{t("pages.single")}<strong>{point.single.toFixed(2)}</strong></span><span>{t("common.pair")}<strong>{point.pair.toFixed(2)}</strong></span><span>{t("pages.gapScore")}<strong>{point.gap.toFixed(2)}</strong></span><span>{t("prediction.structure")}<strong>{point.structure.toFixed(2)}</strong></span><span>{t("prediction.novelty")}<strong>{point.novelty.toFixed(2)}</strong></span><span>{t("dashboard.tripleScoreHistory")}<strong>{point.triple.toFixed(2)} · {t("dashboard.notIncluded")}</strong></span><small>{t("dashboard.totalScoreFormulaNote")}</small></div>;
+  return <div className="chart-tooltip"><b>{format(parseISO(String(label)),"dd/MM/yyyy",{locale})}</b><span>{t("dashboard.totalScoreHistory")}<strong>{point.total.toFixed(2)}</strong></span><span>MA20<strong>{point.totalMa20.toFixed(2)}</strong></span><hr/><span>{t("pages.single")}<strong>{point.single.toFixed(2)}</strong></span><span>{t("common.pair")}<strong>{point.pair.toFixed(2)}</strong></span><span>{t("pages.gapScore")}<strong>{point.gap.toFixed(2)}</strong></span><span>{t("prediction.structure")}<strong>{point.structure.toFixed(2)}</strong></span><span>{t("prediction.novelty")}<strong>{point.novelty.toFixed(2)}</strong></span><small>{t("dashboard.totalScoreFormulaNote")}</small></div>;
 }
 
 export function jackpotHistoryData(draws:Draw[],key:"jackpot"|"jackpot2"){
@@ -122,7 +122,8 @@ function ScoreHistoryChart({title,data,valueKey,color,loading,trainingWindow}:{t
 export default function Dashboard() {
   const {language,t}=useI18n();
   const dateLocale=language==="vi"?vi:enUS;
-  const { draws,filtered,singles,pairs,triples,predictions,selectedGame,gameConfig,effectiveSettings,cooldownNumbers,cooldownMode,cooldownFallback } = useAnalytics();
+  const { draws,filtered,singles,pairs,predictions,selectedGame,gameConfig,effectiveSettings,cooldownNumbers,cooldownMode,cooldownFallback } = useAnalytics();
+  const triples=useMemo(()=>calculateTriples(filtered,gameConfig.maxNumber,gameConfig.insideNumbers),[filtered,gameConfig]);
   const { dashboardFilters: filters, updateDashboardFilters, powerSuggestionMode } = useLotteryStore();
   const predictionListRef=useRef<HTMLDivElement>(null);
   useEffect(()=>{if(predictionListRef.current)predictionListRef.current.scrollTop=0;},[filters.predictionCount]);
@@ -174,7 +175,6 @@ export default function Dashboard() {
   const scoreCharts:[string,ScoreValueKey,string][]=[
     [t("dashboard.singleScoreHistory"),"single","#2f7fc1"],
     [t("dashboard.pairScoreHistory"),"pair","#e9822a"],
-    [t("dashboard.tripleScoreHistory"),"triple","#238b68"],
     [t("dashboard.structureScoreHistory"),"structure","#7a5aa6"],
     [t("dashboard.totalScoreHistory"),"total","#173f56"],
   ];
