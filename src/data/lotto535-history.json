@@ -5,7 +5,7 @@
   "prizeSource": "https://raw.githubusercontent.com/NhanAZ-Data/vietlott-research/main/datasets/prizes/lotto535/all.csv",
   "metadataSource": "https://raw.githubusercontent.com/NhanAZ-Data/vietlott-research/main/datasets/metadata/dataset-summary.json",
   "sourceThrough": "2026-10-19",
-  "datasetUpdatedAt": "2026-10-20T01:42:28+00:00",
+  "datasetUpdatedAt": "2026-10-20T06:39:40+00:00",
   "draws": [
     {
       "id": "00001",
