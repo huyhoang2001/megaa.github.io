@@ -62,6 +62,12 @@ describe("Power history persistence migration",()=>{
     expect(validSettings({...mergeSettings(),minTotal:256},45)).toBe(false);
     expect(validSettings({...mergeSettings(),minTotal:315},55)).toBe(true);
   });
+  it("accepts positive safe-integer candidate pool sizes without a fixed upper cap",()=>{
+    const settings=mergeSettings();
+    expect(settings.candidatePoolSize).toBe(14);
+    for(const candidatePoolSize of [1,19,1000,Number.MAX_SAFE_INTEGER])expect(validSettings({...settings,candidatePoolSize})).toBe(true);
+    for(const candidatePoolSize of [0,-1,1.5,Number.MAX_SAFE_INTEGER+1,Infinity])expect(validSettings({...settings,candidatePoolSize})).toBe(false);
+  });
   it("accepts five main numbers and the 1–12 special number for Lotto 5/35",()=>{
     const draws=lottoHistory.draws as Draw[];
     expect(validDraws(draws,"lotto535")).toBe(true);

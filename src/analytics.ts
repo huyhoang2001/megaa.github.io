@@ -536,7 +536,7 @@ export function selectExperimentalPowerPortfolio(allCandidates:CandidateCombinat
 export function generateCandidates(singles: SingleNumberStats[], pairs: PairStats[], triples: TripleStats[], settings: AnalysisSettings, history:Draw[]=[],insideNumbers:readonly number[]= [...INSIDE_SET],structureHistory:Draw[]=history): CandidateCombination[] {
   const count=Math.max(20,settings.topCombinationCount),universe=generateCandidateUniverse(singles,pairs,triples,settings,history,insideNumbers,structureHistory,count);
   let selected=selectPortfolio(universe,settings,count,false);
-  if(selected.length<count){const expanded=generateCandidateUniverse(singles,pairs,triples,{...settings,candidatePoolSize:Math.min(singles.length,settings.candidatePoolSize+4)},history,insideNumbers,structureHistory,count);selected=selectPortfolio([...universe,...expanded],settings,count,true);}
+  if(selected.length<count)selected=selectPortfolio(universe,settings,count,true);
   return selected;
 }
 
@@ -545,10 +545,7 @@ export function generateSuggestedPortfolio(singles:SingleNumberStats[],pairs:Pai
   const select=(universe:CandidateCombination[],relax=false)=>powerMode==="experimental"&&singles.length===55?selectExperimentalPowerPortfolio(universe,singles,pairs,[],settings,history,count,history,insideNumbers,relax,cooldown):selectPortfolio(universe,settings,count,relax);
   const universe=initialUniverse??generateCandidateUniverse(singles,pairs,[],settings,history,insideNumbers,history,request,cooldown);
   let result=select(universe);
-  if(result.length<count){
-    const expanded=generateCandidateUniverse(singles,pairs,[],{...settings,candidatePoolSize:Math.min(singles.length,settings.candidatePoolSize+4)},history,insideNumbers,history,request,cooldown);
-    result=select([...new Map([...universe,...expanded].map(item=>[item.numbers.join("-"),item])).values()],true);
-  }
+  if(result.length<count)result=select(universe,true);
   return result;
 }
 

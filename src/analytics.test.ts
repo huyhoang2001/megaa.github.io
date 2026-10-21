@@ -90,6 +90,20 @@ describe("analytics", () => {
     expect(states.filter(state=>state==="NEUTRAL")).toHaveLength(7);
     expect(states.filter(state=>state==="HOT")).toHaveLength(4);
     expect(states.filter(state=>state==="COOL")).toHaveLength(3);
+    expect(buildCandidateNumberPool(synthetic as unknown as SingleNumberStats[],{...DEFAULT_SETTINGS,candidatePoolSize:Number.MAX_SAFE_INTEGER},20)).toHaveLength(45);
+  });
+  it("keeps generation and backtest retries within the configured candidate pool",()=>{
+    const real=history.draws as Draw[],settings={...DEFAULT_SETTINGS,candidatePoolSize:10,topCombinationCount:500},training=real.slice(-100);
+    const singles=calculateSingles(training,settings),pairs=calculatePairs(training),triples=calculateTriples(training);
+    const pool=new Set(buildCandidateNumberPool(singles,settings,500,6));
+    const generated=generateCandidates(singles,pairs,triples,settings,training);
+    expect(pool.size).toBe(10);
+    expect(generated.length).toBeGreaterThan(0);
+    expect(generated.every(candidate=>candidate.numbers.every(number=>pool.has(number)))).toBe(true);
+    const backtestTraining=real.slice(0,-2).slice(-100),backtestSingles=calculateSingles(backtestTraining,settings),backtestPool=new Set(buildCandidateNumberPool(backtestSingles,settings,5,6));
+    const target=real.at(-1)!;
+    const backtest=generateBacktestProposals(real,settings,{fromDate:real[0].date,toDate:target.date,trainingDraws:100,predictionCount:500,maxNumber:45,cooldown:{...DEFAULT_SETTINGS.recentDrawCooldown,enabled:false}});
+    expect(backtest.predictions.every(candidate=>candidate.numbers.every(number=>backtestPool.has(number)))).toBe(true);
   });
   it("builds the cooldown from newest full-history draws and optionally includes specials",()=>{
     const older:Draw={id:"9",date:"2026-01-01",numbers:[1,2,3,4,5,6],bonus:7,jackpot:0};
