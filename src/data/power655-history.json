@@ -4,8 +4,8 @@
   "source": "https://raw.githubusercontent.com/NhanAZ-Data/vietlott-research/main/datasets/draws/power655/all.csv",
   "prizeSource": "https://raw.githubusercontent.com/NhanAZ-Data/vietlott-research/main/datasets/prizes/power655/all.csv",
   "metadataSource": "https://raw.githubusercontent.com/NhanAZ-Data/vietlott-research/main/datasets/metadata/dataset-summary.json",
-  "sourceThrough": "2026-10-20",
-  "datasetUpdatedAt": "2026-10-22T06:32:49+00:00",
+  "sourceThrough": "2026-10-22",
+  "datasetUpdatedAt": "2026-10-22T12:19:29+00:00",
   "draws": [
     {
       "id": "00001",
@@ -21201,6 +21201,21 @@
       "bonus": 45,
       "jackpot": 177132635850,
       "jackpot2": 5270143100
+    },
+    {
+      "id": "01414",
+      "date": "2026-10-22",
+      "numbers": [
+        14,
+        19,
+        24,
+        31,
+        34,
+        42
+      ],
+      "bonus": 37,
+      "jackpot": 0,
+      "jackpot2": 0
     }
   ]
 }
