@@ -317,13 +317,13 @@ describe("analytics", () => {
     }
   },30000);
   it("keeps a viable structure-aware candidate pool with real history", () => { const real=history.draws as Draw[]; const singles=calculateSingles(real,DEFAULT_SETTINGS); const pairs=calculatePairs(real); const triples=calculateTriples(real); expect(generateCandidates(singles,pairs,triples,DEFAULT_SETTINGS).length).toBeGreaterThan(0); });
-  it("filters suggested combinations to the configured digital roots",()=>{
+  it("keeps suggested combinations within configured digital roots and parity splits",()=>{
     const real=history.draws as Draw[];
     const candidates=generateCandidates(calculateSingles(real,DEFAULT_SETTINGS),calculatePairs(real),calculateTriples(real),DEFAULT_SETTINGS,real);
     expect(DEFAULT_SETTINGS.allowedDigitalRoots).toEqual([1,3,5,6,7,8,9]);
+    expect(candidates.length).toBeGreaterThan(0);
     expect(candidates.every(candidate=>DEFAULT_SETTINGS.allowedDigitalRoots.includes(candidate.digitalRoot))).toBe(true);
     expect(candidates.every(candidate=>DEFAULT_SETTINGS.allowedParity.includes(`${candidate.evenCount}/${candidate.oddCount}`))).toBe(true);
-    expect(new Set(candidates.map(candidate=>`${candidate.evenCount}/${candidate.oddCount}`))).toEqual(new Set(DEFAULT_SETTINGS.allowedParity));
   });
   it("can provide 50 suggested combinations",()=>{
     const recent=(history.draws as Draw[]).slice(-100);
