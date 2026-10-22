@@ -42,6 +42,7 @@ const defaultLottoDraws = lottoHistory.draws as Draw[];
 const defaultSettings = settingsJson as AnalysisSettings;
 const defaultLottoSettings={...defaultSettings,minTotal:35,candidatePoolSize:14,maxCombinationOverlap:3,allowedParity:["3/2","2/3"],allowedInsideOutside:["3/2","4/1","2/3"],recentDrawCooldown:{...defaultSettings.recentDrawCooldown,enabled:false}};
 const previousDefaultRoots=[[8,5,3,1],[1,2,3,4,5,6,7,8,9]];
+const previousDefaultParity=["3/3","4/2","2/4"];
 const selectablePeriods=new Set<DashboardFilters["period"]>(["last30","last50","last100","last1year","all"]);
 export const normalizeDashboardFilters=(filters?:Partial<DashboardFilters>):DashboardFilters=>{
   const merged={...DEFAULT_FILTERS,...filters};
@@ -72,7 +73,7 @@ export const mergeSettings=(settings?:Partial<AnalysisSettings>,defaults:Analysi
   ...defaults,...settings,
   singleWeights:{...defaults.singleWeights,...settings?.singleWeights},
   combinationWeights:{...defaults.combinationWeights,...settings?.combinationWeights},
-  allowedParity:settings?.allowedParity?.filter(value=>defaults.allowedParity.includes(value)).length?settings.allowedParity.filter(value=>defaults.allowedParity.includes(value)):[...defaults.allowedParity],
+  allowedParity:settings?.allowedParity&&previousDefaultParity.length===settings.allowedParity.length&&previousDefaultParity.every(value=>settings.allowedParity!.includes(value))?[...defaults.allowedParity]:settings?.allowedParity?.filter(value=>defaults.allowedParity.includes(value)).length?settings.allowedParity.filter(value=>defaults.allowedParity.includes(value)):[...defaults.allowedParity],
   allowedDigitalRoots:settings?.allowedDigitalRoots&&previousDefaultRoots.some(roots=>settings.allowedDigitalRoots!.length===roots.length&&roots.every(root=>settings.allowedDigitalRoots!.includes(root)))?defaults.allowedDigitalRoots:[...(settings?.allowedDigitalRoots??defaults.allowedDigitalRoots)],
   consensusWeights:{...defaults.consensusWeights,...settings?.consensusWeights},
   singleScoreWeights:{...defaults.singleScoreWeights,...settings?.singleScoreWeights},

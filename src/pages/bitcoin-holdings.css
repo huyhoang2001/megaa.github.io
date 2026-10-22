@@ -1,0 +1,20 @@
+.btc-holdings-page{overflow:hidden;border-radius:20px;background:#222530;color:#e6e8ed;box-shadow:0 12px 32px rgba(20,31,42,.16)}
+.btc-holdings-header{padding:24px 28px 16px;border-bottom:1px solid rgba(255,255,255,.08)}
+.btc-holdings-header h1{margin:0;color:#f5f6f8;font-size:24px;font-weight:700;letter-spacing:-.02em}
+.btc-holdings-header p{margin:7px 0 0;color:#9ca3b2;font-size:13px}
+.btc-holdings-scroll{overflow-x:auto;overscroll-behavior-inline:contain;scrollbar-color:#535866 #222530}
+.btc-holdings-chart{display:block;width:100%;min-width:940px;height:auto;overflow:visible;font-family:inherit}
+.btc-holdings-slice{cursor:pointer;outline:none;transition:filter .2s ease,transform .2s ease}
+.btc-holdings-slice:hover,.btc-holdings-slice.is-active{filter:brightness(1.12) drop-shadow(0 5px 8px rgba(0,0,0,.3))}
+.btc-holdings-slice:focus-visible{filter:brightness(1.12) drop-shadow(0 0 5px #fff);stroke:#fff;stroke-width:2}
+.btc-holdings-label path{fill:none;stroke-width:1.2;opacity:.75}
+.btc-holdings-label text{fill:#a6adbc;font-size:14px;font-weight:600;paint-order:stroke;stroke:#222530;stroke-width:3px;stroke-linejoin:round}
+.btc-holdings-label .btc-holdings-percent{fill:#f1f2f5;font-weight:750}
+.btc-holdings-center{text-anchor:middle}
+.btc-holdings-total-label{fill:#a4aaba;font-size:16px;font-weight:500}
+.btc-holdings-total{fill:#f5f6f8;font-size:31px;font-weight:750;letter-spacing:.01em}
+.btc-holdings-active-name{fill:#d8dce4;font-size:15px;font-weight:600}
+.btc-holdings-active-percent{fill:#fff;font-size:24px;font-weight:750}
+.btc-holdings-footnote{margin:0;padding:0 28px 20px;color:#8991a1;font-size:12px}
+@media(max-width:640px){.btc-holdings-page{border-radius:15px}.btc-holdings-header{padding:19px 18px 14px}.btc-holdings-header h1{font-size:20px}.btc-holdings-chart{min-width:940px}.btc-holdings-footnote{padding:0 18px 16px}}
+@media(prefers-reduced-motion:reduce){.btc-holdings-slice{transition:none}}

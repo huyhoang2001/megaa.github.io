@@ -14,8 +14,10 @@ describe("Power history persistence migration",()=>{
   it("upgrades the previous default digital roots",()=>{
     expect(mergeSettings({allowedDigitalRoots:[1,3,5,8]}).allowedDigitalRoots).toEqual([1,3,5,6,7,8,9]);
   });
-  it("keeps suggested parity limited to balanced 3/3, 4/2, or 2/4",()=>{
-    expect(mergeSettings({allowedParity:["6/0","5/1","1/5","0/6"]}).allowedParity).toEqual(["3/3","4/2","2/4"]);
+  it("includes 5/1 and 1/5 suggested parity splits and migrates previous defaults",()=>{
+    expect(mergeSettings().allowedParity).toEqual(["3/3","4/2","2/4","5/1","1/5"]);
+    expect(mergeSettings({allowedParity:["3/3","4/2","2/4"]}).allowedParity).toEqual(["3/3","4/2","2/4","5/1","1/5"]);
+    expect(mergeSettings({allowedParity:["6/0","5/1","1/5","0/6"]}).allowedParity).toEqual(["5/1","1/5"]);
     expect(mergeSettings({allowedParity:["2/4","4/2"]}).allowedParity).toEqual(["2/4","4/2"]);
   });
   it("merges and validates recent-draw cooldown preferences",()=>{
