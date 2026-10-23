@@ -5,8 +5,8 @@
   "source": "https://raw.githubusercontent.com/NhanAZ-Data/vietlott-research/main/datasets/draws/mega645/all.csv",
   "prizeSource": "https://raw.githubusercontent.com/NhanAZ-Data/vietlott-research/main/datasets/prizes/mega645/all.csv",
   "metadataSource": "https://raw.githubusercontent.com/NhanAZ-Data/vietlott-research/main/datasets/metadata/dataset-summary.json",
-  "sourceThrough": "2026-10-21",
-  "datasetUpdatedAt": "2026-10-23T06:16:21+00:00",
+  "sourceThrough": "2026-10-23",
+  "datasetUpdatedAt": "2026-10-23T11:51:56+00:00",
   "draws": [
     {
       "id": "00001",
@@ -20521,6 +20521,19 @@
         44
       ],
       "jackpot": 31281381500
+    },
+    {
+      "id": "01579",
+      "date": "2026-10-23",
+      "numbers": [
+        2,
+        5,
+        11,
+        22,
+        32,
+        40
+      ],
+      "jackpot": 0
     }
   ]
 }
