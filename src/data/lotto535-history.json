@@ -4,8 +4,8 @@
   "source": "https://raw.githubusercontent.com/NhanAZ-Data/vietlott-research/main/datasets/draws/lotto535/all.csv",
   "prizeSource": "https://raw.githubusercontent.com/NhanAZ-Data/vietlott-research/main/datasets/prizes/lotto535/all.csv",
   "metadataSource": "https://raw.githubusercontent.com/NhanAZ-Data/vietlott-research/main/datasets/metadata/dataset-summary.json",
-  "sourceThrough": "2026-10-27",
-  "datasetUpdatedAt": "2026-10-28T15:23:58+00:00",
+  "sourceThrough": "2026-10-28",
+  "datasetUpdatedAt": "2026-10-28T19:29:57+00:00",
   "draws": [
     {
       "id": "00001",
@@ -12641,6 +12641,19 @@
         34
       ],
       "bonus": 2,
+      "jackpot": 0
+    },
+    {
+      "id": "00973",
+      "date": "2026-10-28",
+      "numbers": [
+        2,
+        17,
+        20,
+        24,
+        32
+      ],
+      "bonus": 6,
       "jackpot": 0
     }
   ]
