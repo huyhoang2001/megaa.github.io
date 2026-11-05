@@ -6,7 +6,7 @@
   "prizeSource": "https://raw.githubusercontent.com/NhanAZ-Data/vietlott-research/main/datasets/prizes/mega645/all.csv",
   "metadataSource": "https://raw.githubusercontent.com/NhanAZ-Data/vietlott-research/main/datasets/metadata/dataset-summary.json",
   "sourceThrough": "2026-11-01",
-  "datasetUpdatedAt": "2026-11-04T18:16:04+00:00",
+  "datasetUpdatedAt": "2026-11-05T03:25:22+00:00",
   "draws": [
     {
       "id": "00001",
